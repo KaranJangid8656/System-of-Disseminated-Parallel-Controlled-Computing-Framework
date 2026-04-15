@@ -25,6 +25,9 @@ export default function Home() {
     setTarget,
     addObstacle,
     startMission,
+    faultProcessor,
+    degradeProcessor,
+    recoverProcessor,
   } = useSimulationEngine();
 
   const handleCanvasClick = (pos: { x: number, y: number }, rightClick?: boolean) => {
@@ -78,6 +81,7 @@ export default function Home() {
             </div>
 
             <div className="scanline" />
+            <div className="radar-sweep" />
             
             <Canvas 
               stateRef={stateRef} 
@@ -106,6 +110,9 @@ export default function Home() {
           onSpeedChange={setSpeed}
           onRangeChange={setSensorRange}
           onMissionStart={startMission}
+          onFaultProcessor={faultProcessor}
+          onDegradeProcessor={degradeProcessor}
+          onRecoverProcessor={recoverProcessor}
           tick={tick}
         />
       </main>

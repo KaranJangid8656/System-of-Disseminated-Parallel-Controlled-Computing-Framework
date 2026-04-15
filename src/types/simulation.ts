@@ -1,3 +1,8 @@
+/**
+ * Unified Simulation Types for DPCC Command Center
+ * High-fidelity, research-grade definitions.
+ */
+
 export interface Vector2D {
     x: number;
     y: number;
@@ -7,16 +12,11 @@ export interface DroneState {
     id: string;
     pos: Vector2D;
     velocity: Vector2D;
-    target: Vector2D;
-    speed: number;
-    health: number;
-    battery: number;
-    altitude: number;
-    heading: number; // degrees
-    status: 'idle' | 'navigating' | 'avoiding' | 'holding' | 'waypoint_seek' | 'mission_complete' | 'returning';
+    heading: number;
+    energy: number;
+    status: string;
     trail: Vector2D[];
-    signalStrength: number;
-    totalDistanceTraveled: number;
+    altitude: number;
 }
 
 export interface Obstacle {
@@ -24,63 +24,43 @@ export interface Obstacle {
     pos: Vector2D;
     radius: number;
     type: 'static' | 'dynamic';
-    velocity?: Vector2D;
-    label?: string;
-}
-
-export interface Waypoint {
-    id: string;
-    pos: Vector2D;
-    label: string;
-    reached: boolean;
-    reachedAt?: number;
 }
 
 export interface Mission {
     id: string;
-    name: string;
-    description: string;
-    waypoints: Waypoint[];
     status: 'pending' | 'active' | 'completed' | 'failed';
-    startTime?: number;
-    endTime?: number;
-    priority: 'low' | 'medium' | 'high' | 'critical';
+    waypoints: Array<{ pos: Vector2D; reached: boolean }>;
 }
 
 export interface SimulationState {
     drone: DroneState;
     obstacles: Obstacle[];
     target: Vector2D;
-    isRunning: boolean;
-    sensorRange: number;
     detectedObstacles: string[];
-    logs: LogEntry[];
     missions: Mission[];
-    activeMissionIndex: number;
-    tick: number;
-    elapsedTime: number;
     threatLevel: 'green' | 'yellow' | 'orange' | 'red';
-    pathHistory: Vector2D[];
+    systemLoad: number;
+    altitude: number;
+    formationMode: string;
 }
 
 export interface LogEntry {
     id: string;
     timestamp: number;
-    module: 'SYSTEM' | 'SENSOR' | 'NAV' | 'CONTROL' | 'COMM' | 'MISSION';
+    service: string;
     message: string;
-    type: 'info' | 'warning' | 'error' | 'success' | 'critical';
+    level: 'INFO' | 'WARNING' | 'ERROR' | 'SUCCESS' | 'CRITICAL';
 }
 
 export interface ModuleStats {
-    name: string;
-    executions: number;
-    avgLatency: number;
-    load: number;
-    frequency: string;
-    description: string;
+    latency: number;
+    throughput: number;
+    errorRate: number;
+    active: boolean;
 }
 
 export interface TelemetryPoint {
-    time: number;
+    timestamp: number;
     value: number;
+    metric: string;
 }

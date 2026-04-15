@@ -32,11 +32,11 @@ const LogPanel: React.FC<LogPanelProps> = ({ logs, onClear }) => {
                 {logs.length === 0 && (
                     <div className="text-white/20 italic">Awaiting telemetry...</div>
                 )}
-                {logs.slice().reverse().map((log) => (
-                    <div key={log.id} className="flex gap-3 leading-relaxed animate-in fade-in slide-in-from-left-2 duration-300">
-                        <span className="opacity-30 whitespace-nowrap">[{new Date(log.timestamp).toLocaleTimeString([], { hour12: false })}]</span>
-                        <span className={`font-bold w-16 ${getModuleColor(log.module)}`}>{log.module}</span>
-                        <span className={`${getTypeColor(log.type)}`}>{log.message}</span>
+                {logs.map((log) => (
+                    <div key={log.id} className="flex gap-3 leading-relaxed border-l border-white/5 pl-2 hover:bg-white/5 transition-colors">
+                        <span className="opacity-20 whitespace-nowrap text-[10px]">{new Date(log.timestamp).toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })}.{(log.timestamp % 1000).toString().padStart(3, '0')}</span>
+                        <span className={`font-bold w-20 text-[9px] tracking-tighter uppercase ${getServiceColor(log.service)}`}>{log.service}</span>
+                        <span className={`flex-1 ${getLevelColor(log.level)}`}>{log.message}</span>
                     </div>
                 ))}
                 <div ref={endRef} />
@@ -45,21 +45,26 @@ const LogPanel: React.FC<LogPanelProps> = ({ logs, onClear }) => {
     );
 };
 
-const getModuleColor = (module: string) => {
-    switch (module) {
+const getServiceColor = (service: string) => {
+    switch (service) {
         case 'SENSOR': return 'text-[#00f2ff]';
         case 'NAV': return 'text-[#7000ff]';
         case 'CONTROL': return 'text-[#00ffaa]';
+        case 'COMM': return 'text-[#ffcc00]';
+        case 'PYTHON_ENGINE': return 'text-[#ff6b35]';
+        case 'KERNEL': return 'text-white/60';
+        case 'CORE_KERNEL': return 'text-white/60';
         default: return 'text-white/40';
     }
 };
 
-const getTypeColor = (type: string) => {
-    switch (type) {
-        case 'warning': return 'text-[#ff0055] opacity-90';
-        case 'error': return 'text-[#ff0055] font-bold';
-        case 'success': return 'text-[#00ffaa] opacity-90';
-        default: return 'text-white/80';
+const getLevelColor = (level: string) => {
+    switch (level) {
+        case 'WARNING': return 'text-[#ffcc00]';
+        case 'ERROR': return 'text-[#ff4d00] font-bold';
+        case 'SUCCESS': return 'text-[#00ffaa]';
+        case 'CRITICAL': return 'text-[#ff0055] font-bold animate-pulse';
+        default: return 'text-white/70';
     }
 };
 

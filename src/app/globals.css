@@ -1,74 +1,91 @@
 @import "tailwindcss";
 
 :root {
-  --background: #050b14;
+  --background: #02060c;
   --foreground: #e2e8f0;
   --accent: #00f2ff;
   --accent-secondary: #7000ff;
-  --danger: #ff0055;
+  --danger: #ff4d00;
   --success: #00ffaa;
-  --panel-bg: rgba(10, 20, 35, 0.7);
-  --glass-border: rgba(255, 255, 255, 0.1);
+  --panel-bg: rgba(6, 12, 22, 0.8);
+  --glass-border: rgba(255, 255, 255, 0.05);
 }
 
 body {
   background: var(--background);
+  background-image:
+    radial-gradient(circle at 50% 50%, rgba(0, 242, 255, 0.02) 0%, transparent 80%),
+    linear-gradient(rgba(255, 255, 255, 0.01) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.01) 1px, transparent 1px);
+  background-size: 100% 100%, 40px 40px, 40px 40px;
   color: var(--foreground);
-  font-family: 'Outfit', sans-serif;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
   overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
 }
 
 @layer utilities {
   .glass {
     background: var(--panel-bg);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
     border: 1px solid var(--glass-border);
-    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+    box-shadow: 0 4px 24px -1px rgba(0, 0, 0, 0.5);
   }
 
   .glow-text {
-    text-shadow: 0 0 10px rgba(0, 242, 255, 0.5);
-  }
-
-  .glow-border {
-    box-shadow: 0 0 15px rgba(0, 242, 255, 0.3);
+    text-shadow: 0 0 12px rgba(0, 242, 255, 0.3);
   }
 
   .scanline {
     width: 100%;
-    height: 2px;
-    background: rgba(0, 242, 255, 0.1);
-    opacity: 0.1;
+    height: 100%;
+    background: linear-gradient(to bottom,
+        transparent 50%,
+        rgba(0, 242, 255, 0.02) 50%);
+    background-size: 100% 4px;
     position: absolute;
-    bottom: 100%;
-    animation: scanline 6s linear infinite;
+    inset: 0;
+    pointer-events: none;
+    z-index: 5;
+    opacity: 0.5;
+  }
+
+  .radar-sweep {
+    position: absolute;
+    width: 200%;
+    height: 200%;
+    background: conic-gradient(from 0deg, rgba(0, 242, 255, 0.05), transparent 60deg);
+    top: -50%;
+    left: -50%;
+    animation: sweep 10s linear infinite;
+    pointer-events: none;
   }
 }
 
-@keyframes scanline {
-  0% {
-    bottom: 100%;
+@keyframes sweep {
+  from {
+    transform: rotate(0deg);
   }
 
-  100% {
-    bottom: 0%;
+  to {
+    transform: rotate(360deg);
   }
 }
 
 .custom-scrollbar::-webkit-scrollbar {
-  width: 4px;
+  width: 3px;
 }
 
 .custom-scrollbar::-webkit-scrollbar-track {
-  background: rgba(0, 0, 0, 0.1);
+  background: transparent;
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: var(--glass-border);
+  background: rgba(255, 255, 255, 0.1);
   border-radius: 10px;
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.2);
+  background: var(--accent);
 }
