@@ -60,7 +60,7 @@ export const useSimulationEngine = () => {
                 ],
             },
         ],
-        threatLevel: 'green',
+        dangerLevel: 'green',
         systemLoad: 0,
         altitude: 10,
         formationMode: 'OFF',
@@ -86,6 +86,34 @@ export const useSimulationEngine = () => {
         };
         setLogs(prev => [newLog, ...prev].slice(0, 150));
     }, []);
+
+    const addWaypoint = useCallback((pos: { x: number; y: number }) => {
+        const mission = stateRef.current.missions.find(m => m.status === 'active');
+        if (mission) {
+            mission.waypoints.push({ pos, reached: false });
+            agentsRef.current.get('UAV-704')?.setMission(mission.waypoints.map(w => w.pos));
+            addLog(`Waypoint Added at [${pos.x.toFixed(0)}, ${pos.y.toFixed(0)}]`, 'SUCCESS');
+        } else {
+            // Create a new active mission if none exists
+            stateRef.current.missions = [{
+                id: `M-${Date.now()}`,
+                status: 'active',
+                waypoints: [{ pos, reached: false }]
+            }];
+            agentsRef.current.get('UAV-704')?.setMission([{ pos, reached: false }].map(w => w.pos));
+            addLog(`New Mission Created at [${pos.x.toFixed(0)}, ${pos.y.toFixed(0)}]`, 'SUCCESS');
+        }
+    }, [addLog]);
+
+    const clearMission = useCallback(() => {
+        stateRef.current.missions = [{
+            id: `M-${Date.now()}`,
+            status: 'active',
+            waypoints: []
+        }];
+        agentsRef.current.get('UAV-704')?.setMission([]);
+        addLog('Mission data purged', 'INFO');
+    }, [addLog]);
 
     // ── Main Execution Loop ──
     useEffect(() => {
@@ -253,10 +281,17 @@ export const useSimulationEngine = () => {
 
     const addObstacle = useCallback((pos: { x: number; y: number }) => {
         const id = `obs-${Date.now()}`;
-        const obs = { id, pos, radius: 20 + Math.random() * 30, type: 'static' as const };
+        const obs = { id, pos, radius: 8 + Math.random() * 10, type: 'static' as const };
         stateRef.current.obstacles.push(obs);
         agentsRef.current.get('UAV-704')?.setObstacles(stateRef.current.obstacles);
         addLog(`Obstacle Inserted at [${pos.x.toFixed(0)}, ${pos.y.toFixed(0)}]`, 'WARNING');
+    }, [addLog]);
+
+    const clearObstacles = useCallback(() => {
+        stateRef.current.obstacles = [];
+        stateRef.current.detectedObstacles = [];
+        agentsRef.current.get('UAV-704')?.setObstacles([]);
+        addLog('All obstacles cleared', 'INFO');
     }, [addLog]);
 
     /** Inject a hard fault into a specific processor */
@@ -298,6 +333,9 @@ export const useSimulationEngine = () => {
         resetSimulation,
         setTarget,
         addObstacle,
+        clearObstacles,
+        addWaypoint,
+        clearMission,
         startMission,
         faultProcessor,
         degradeProcessor,

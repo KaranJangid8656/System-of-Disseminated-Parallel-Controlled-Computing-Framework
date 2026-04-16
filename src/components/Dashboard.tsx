@@ -4,12 +4,20 @@ import React, { useState } from 'react';
 import { LogEntry, ModuleStats, TelemetryPoint, SimulationState } from '../types/simulation';
 
 const MODULE_COLORS: Record<string, string> = {
-    SENSOR: '#00f2ff', NAV: '#7000ff', CONTROL: '#00ffaa', COMM: '#ffcc00',
+    SENSOR: '#38bdf8', // sky-400
+    NAV: '#818cf8', // indigo-400
+    CONTROL: '#34d399', // emerald-400
+    COMM: '#fbbf24', // amber-400
 };
 
 const STATUS_COLORS: Record<string, string> = {
-    ONLINE: '#00ffaa', DEGRADED: '#ffcc00', OFFLINE: '#ff0055', RECOVERING: '#ff8800',
+    ONLINE: '#10b981', // emerald-500
+    DEGRADED: '#f59e0b', // amber-500
+    OFFLINE: '#ef4444', // red-500
+    RECOVERING: '#0ea5e9', // sky-500
 };
+
+type ProcessorId = 'SENSOR' | 'NAV' | 'CONTROL' | 'COMM';
 
 interface DashboardProps {
     isRunning: boolean;
@@ -26,10 +34,11 @@ interface DashboardProps {
     onSpeedChange: (speed: number) => void;
     onRangeChange: (range: number) => void;
     onMissionStart: () => void;
-    onFaultProcessor: (id: 'SENSOR' | 'NAV' | 'CONTROL' | 'COMM') => void;
-    onDegradeProcessor: (id: 'SENSOR' | 'NAV' | 'CONTROL' | 'COMM') => void;
-    onRecoverProcessor: (id: 'SENSOR' | 'NAV' | 'CONTROL' | 'COMM') => void;
+    onFaultProcessor: (id: ProcessorId) => void;
+    onDegradeProcessor: (id: ProcessorId) => void;
+    onRecoverProcessor: (id: ProcessorId) => void;
     tick: number;
+    onSelectProcessor: (id: ProcessorId) => void;
 }
 
 type TabKey = 'TELEMETRY' | 'PROCESSORS' | 'MISSION';
@@ -37,7 +46,7 @@ type TabKey = 'TELEMETRY' | 'PROCESSORS' | 'MISSION';
 const Dashboard: React.FC<DashboardProps> = ({
     isRunning, speed, sensorRange, logs, activeModules, moduleStats, stateRef,
     telemetry, onStart, onStop, onReset, onSpeedChange, onRangeChange, onMissionStart,
-    onFaultProcessor, onDegradeProcessor, onRecoverProcessor, tick
+    onFaultProcessor, onDegradeProcessor, onRecoverProcessor, tick, onSelectProcessor
 }) => {
     const [activeTab, setActiveTab] = useState<TabKey>('TELEMETRY');
     const state = stateRef.current;
@@ -52,228 +61,227 @@ const Dashboard: React.FC<DashboardProps> = ({
     };
 
     return (
-        <aside className="w-80 h-full flex flex-col gap-4">
-            {/* System Status Panel */}
-            <div className="glass p-4 rounded-2xl border-t border-white/10 relative overflow-hidden">
-                <div className="flex justify-between items-center mb-3">
-                    <div className="flex flex-col">
-                        <span className="text-[10px] font-bold tracking-[0.3em] opacity-40 uppercase">Multi-Proc System</span>
-                        <span className="text-xl font-black text-[#00f2ff] tracking-tighter italic">
-                            {isRunning ? 'ACTIVE' : 'STANDBY'}
-                        </span>
-                    </div>
-                    <div className="flex flex-col items-end gap-1">
-                        <span className="text-[8px] opacity-40 uppercase font-bold">UAV</span>
-                        <span className="text-xs font-mono font-bold tracking-widest">{drone.id}</span>
-                    </div>
+        <aside className="w-96 flex flex-col gap-4 text-slate-200 relative">
+
+            {/* Quick Actions & System Header */}
+            <div className="bg-slate-800 p-4 rounded-xl shadow-md border border-slate-700">
+                <div className="flex justify-between items-center mb-4">
+                    <h2 className="text-sm font-bold tracking-tight uppercase text-white">Control Panel</h2>
+                    <span className="text-[10px] bg-slate-900 border border-slate-700 text-slate-400 px-2 py-1 rounded font-mono">TICK: {tick}</span>
                 </div>
-
-                <div className="grid grid-cols-2 gap-2">
-                    <div className="flex flex-col gap-1 bg-white/[0.03] rounded-lg p-2">
-                        <span className="text-[7px] opacity-40 uppercase font-bold">BATT</span>
-                        <span className={`text-sm font-mono font-bold ${drone.energy < 20 ? 'text-[#ff0055]' : 'text-[#00ffaa]'}`}>
-                            {drone.energy.toFixed(1)}%
-                        </span>
-                        <div className="h-0.5 w-full bg-white/5 rounded-full overflow-hidden">
-                            <div
-                                className="h-full transition-all duration-500"
-                                style={{
-                                    width: `${drone.energy}%`,
-                                    background: drone.energy > 50 ? '#00ffaa' : drone.energy > 25 ? '#ffcc00' : '#ff0055',
-                                }}
-                            />
-                        </div>
-                    </div>
-                    <div className="flex flex-col gap-1 bg-white/[0.03] rounded-lg p-2">
-                        <span className="text-[7px] opacity-40 uppercase font-bold">POS</span>
-                        <span className="text-[10px] font-mono opacity-70">
-                            {drone.pos.x.toFixed(0)}, {drone.pos.y.toFixed(0)}
-                        </span>
-                        <span className="text-[8px] font-mono opacity-30">
-                            HEAD {drone.heading.toFixed(0)}°
-                        </span>
-                    </div>
-                </div>
-
-                {/* Tick counter */}
-                <div className="mt-2 text-[7px] font-mono opacity-20 text-right">TICK #{tick}</div>
-            </div>
-
-            {/* Tactical Controls */}
-            <div className="glass p-4 rounded-2xl flex flex-col gap-3">
+                
                 <div className="flex gap-2">
                     {!isRunning ? (
                         <button
                             id="btn-start"
                             onClick={onStart}
-                            className="flex-1 bg-[#00f2ff] text-black font-black text-[11px] py-3 rounded-xl hover:scale-[1.02] transition-all flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(0,242,255,0.3)]"
+                            className="flex-1 bg-emerald-600 text-white font-semibold text-xs py-2.5 rounded-lg hover:bg-emerald-500 transition-colors shadow"
                         >
-                            ▶ INITIATE ENGINE
+                            Start Simulation
                         </button>
                     ) : (
                         <button
                             id="btn-stop"
                             onClick={onStop}
-                            className="flex-1 bg-[#ff0055] text-white font-black text-[11px] py-3 rounded-xl hover:scale-[1.02] transition-all flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(255,0,85,0.3)] animate-pulse"
+                            className="flex-1 bg-rose-600 text-white font-semibold text-xs py-2.5 rounded-lg hover:bg-rose-500 transition-colors shadow"
                         >
-                            ■ TERMINATE LINK
+                            Stop Simulation
                         </button>
                     )}
                     <button
                         id="btn-reset"
                         onClick={onReset}
-                        className="p-3 bg-white/5 hover:bg-white/10 rounded-xl transition-all border border-white/10"
+                        className="px-4 bg-slate-700 text-white border border-slate-600 hover:bg-slate-600 font-semibold text-xs rounded-lg transition-colors shadow"
+                        title="Reset Environment"
                     >
-                        🔄
+                        Reset
                     </button>
                 </div>
-                <button
-                    id="btn-mission"
-                    onClick={onMissionStart}
-                    className="w-full bg-white/5 hover:bg-white/10 border border-white/5 rounded-xl py-2 text-[9px] font-bold uppercase tracking-widest"
-                >
-                    ◈ Start Mission
-                </button>
             </div>
 
-            {/* Main Tabs Container */}
-            <div className="flex-1 glass rounded-2xl p-4 flex flex-col overflow-hidden min-h-0">
-                <div className="flex gap-1 mb-4">
+            {/* Data Tabs Panel */}
+            <div className="flex-1 bg-slate-800 rounded-xl flex flex-col shadow-md border border-slate-700 overflow-hidden min-h-0 relative">
+                
+                <div className="flex border-b border-slate-700 p-1 bg-slate-900/50">
                     {(['TELEMETRY', 'PROCESSORS', 'MISSION'] as TabKey[]).map((tab) => (
                         <button
                             key={tab}
                             id={`tab-${tab.toLowerCase()}`}
                             onClick={() => setActiveTab(tab)}
-                            className={`flex-1 py-1.5 rounded-lg text-[8px] font-black tracking-widest transition-all ${activeTab === tab
-                                ? 'bg-white/10 text-[#00f2ff]'
-                                : 'opacity-30 hover:opacity-70'
-                                }`}
+                            className={`flex-1 py-2 rounded-md text-xs font-semibold transition-all ${
+                                activeTab === tab
+                                    ? 'bg-slate-800 text-blue-400 shadow-sm border border-slate-600'
+                                    : 'text-slate-400 hover:bg-slate-800/50 hover:text-slate-200'
+                            }`}
                         >
                             {tab}
                         </button>
                     ))}
                 </div>
 
-                <div className="flex-1 overflow-y-auto custom-scrollbar">
+                <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
 
                     {/* ── TELEMETRY TAB ── */}
                     {activeTab === 'TELEMETRY' && (
-                        <div className="space-y-4">
-                            {/* Energy sparkline */}
-                            <div className="flex flex-col gap-2">
-                                <span className="text-[9px] font-bold tracking-[0.2em] opacity-30 uppercase">Energy History</span>
-                                <div className="h-16 w-full bg-black/40 rounded flex items-end gap-[2px] p-2 border border-white/5">
+                        <div className="space-y-6">
+                            {/* Key Indicators */}
+                            <div className="grid grid-cols-2 gap-3">
+                                <div className="border border-slate-600 rounded-lg p-3 bg-slate-700/30">
+                                    <div className="text-[10px] font-bold text-slate-400 uppercase mb-1">Energy Level</div>
+                                    <div className={`text-lg font-bold font-mono ${drone.energy < 20 ? 'text-rose-400' : 'text-white'}`}>
+                                        {drone.energy.toFixed(1)}%
+                                    </div>
+                                    <div className="h-1.5 w-full bg-slate-800 rounded-full overflow-hidden mt-2">
+                                        <div
+                                            className="h-full transition-all duration-500"
+                                            style={{
+                                                width: `${drone.energy}%`,
+                                                background: drone.energy > 50 ? '#10b981' : drone.energy > 25 ? '#f59e0b' : '#ef4444',
+                                            }}
+                                        />
+                                    </div>
+                                </div>
+                                <div className="border border-slate-600 rounded-lg p-3 bg-slate-700/30">
+                                    <div className="text-[10px] font-bold text-slate-400 uppercase mb-1">Position</div>
+                                    <div className="text-sm font-mono text-white mt-1">
+                                        [{drone.pos.x.toFixed(0)}, {drone.pos.y.toFixed(0)}]
+                                    </div>
+                                    <div className="text-xs font-mono text-slate-400 mt-1">
+                                        Head: {drone.heading.toFixed(0)}°
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Energy Chart */}
+                            <div>
+                                <div className="text-xs font-bold text-slate-300 mb-2">Energy Depletion Trend</div>
+                                <div className="h-20 w-full bg-slate-900 rounded-lg flex items-end gap-0.5 p-2 border border-slate-700 shadow-inner">
                                     {(telemetry['UAV-704'] ?? []).slice(-40).map((pt, i) => (
                                         <div
                                             key={i}
-                                            className="w-full"
+                                            className="w-full rounded-t-sm"
                                             style={{
                                                 height: `${pt.value}%`,
-                                                background: pt.value > 50 ? '#00ffaa' : pt.value > 25 ? '#ffcc00' : '#ff0055',
-                                                opacity: 0.5 + (i / 40) * 0.5,
+                                                background: pt.value > 50 ? '#10b981' : pt.value > 25 ? '#f59e0b' : '#ef4444',
+                                                opacity: 0.6 + (i / 40) * 0.4,
                                             }}
                                         />
                                     ))}
                                 </div>
                             </div>
 
-                            {/* Processor latency readouts */}
-                            <div className="grid grid-cols-1 gap-2">
-                                <span className="text-[9px] font-bold tracking-[0.2em] opacity-30 uppercase">Processor Latencies</span>
-                                {Object.entries(moduleStats).map(([name, stats]) => {
-                                    const status = getProcessorStatus(name);
-                                    return (
-                                        <div key={name} className="flex justify-between items-center p-2 rounded-lg bg-white/[0.02] border border-white/5">
-                                            <div className="flex items-center gap-2">
-                                                <div
-                                                    className="w-1.5 h-1.5 rounded-full"
-                                                    style={{ backgroundColor: STATUS_COLORS[status] ?? '#888', boxShadow: `0 0 6px ${STATUS_COLORS[status] ?? '#888'}88` }}
-                                                />
-                                                <div className="w-1 h-3 rounded-full" style={{ backgroundColor: MODULE_COLORS[name] }} />
-                                                <span className="text-[10px] font-bold">{name}</span>
+                            {/* Network Health */}
+                            <div>
+                                <div className="text-xs font-bold text-slate-300 mb-2">Processor Latency Profile</div>
+                                <div className="space-y-1.5">
+                                    {Object.entries(moduleStats).map(([name, stats]) => {
+                                        const status = getProcessorStatus(name);
+                                        return (
+                                            <div key={name} className="flex justify-between items-center p-2.5 rounded-lg border border-slate-700 bg-slate-800/80 shadow-sm cursor-pointer hover:border-slate-500 transition-colors" onClick={() => onSelectProcessor(name as ProcessorId)}>
+                                                <div className="flex items-center gap-3">
+                                                    <div
+                                                        className="w-2 h-2 rounded-full"
+                                                        style={{ backgroundColor: STATUS_COLORS[status] ?? '#94a3b8' }}
+                                                    />
+                                                    <span className="text-xs font-semibold text-slate-200">{name}</span>
+                                                </div>
+                                                <div className="flex items-center gap-4">
+                                                    <span className={`text-[10px] font-bold uppercase rounded px-1.5 py-0.5 ${
+                                                        status === 'ONLINE' ? 'bg-emerald-500/20 text-emerald-400' :
+                                                        status === 'DEGRADED' ? 'bg-amber-500/20 text-amber-400' :
+                                                        status === 'RECOVERING' ? 'bg-sky-500/20 text-sky-400' :
+                                                        'bg-rose-500/20 text-rose-400'
+                                                    }`}>
+                                                        {status}
+                                                    </span>
+                                                    <span className="text-xs font-mono font-medium text-slate-400 w-12 text-right">
+                                                        {stats.latency.toFixed(0)}ms
+                                                    </span>
+                                                </div>
                                             </div>
-                                            <div className="flex items-center gap-3">
-                                                <span className="text-[8px] opacity-30">{status}</span>
-                                                <span className="text-[9px] font-mono opacity-60">{stats.latency.toFixed(0)}ms</span>
-                                            </div>
-                                        </div>
-                                    );
-                                })}
+                                        );
+                                    })}
+                                </div>
                             </div>
                         </div>
                     )}
 
                     {/* ── PROCESSORS TAB ── */}
                     {activeTab === 'PROCESSORS' && (
-                        <div className="space-y-3">
-                            <p className="text-[8px] opacity-30 tracking-wide">Click to inject faults or recover processors in real-time.</p>
-                            {(['SENSOR', 'NAV', 'CONTROL', 'COMM'] as const).map((proc) => {
+                        <div className="space-y-4">
+                            <div className="bg-sky-900/30 border border-sky-800 text-sky-200 text-[11px] p-3 rounded-lg leading-relaxed">
+                                <strong className="block mb-1">Architecture Diagnostics</strong>
+                                Select a processor below for deep telemetry, or use quick actions to inject hardware faults.
+                            </div>
+                            
+                            {(['SENSOR', 'NAV', 'CONTROL', 'COMM'] as ProcessorId[]).map((proc) => {
                                 const stats = moduleStats[proc];
                                 const status = getProcessorStatus(proc);
-                                const color = MODULE_COLORS[proc];
-                                const statusColor = STATUS_COLORS[status] ?? '#888';
+                                const isOnline = status === 'ONLINE';
+                                
                                 return (
                                     <div
                                         key={proc}
-                                        className="rounded-xl p-3 border bg-white/[0.02] flex flex-col gap-2"
-                                        style={{ borderColor: `${color}30` }}
+                                        className={`rounded-xl p-3.5 border transition-all cursor-pointer ${
+                                            isOnline ? 'border-slate-600 bg-slate-700/30 shadow hover:border-slate-500 hover:bg-slate-700/50' 
+                                            : status === 'DEGRADED' ? 'border-amber-600/50 bg-amber-900/20 hover:border-amber-500'
+                                            : status === 'RECOVERING' ? 'border-sky-600/50 bg-sky-900/20 hover:border-sky-500'
+                                            : 'border-rose-600/50 bg-rose-900/20 hover:border-rose-500'
+                                        }`}
+                                        onClick={() => onSelectProcessor(proc)}
                                     >
-                                        {/* Header */}
-                                        <div className="flex justify-between items-center">
+                                        <div className="flex justify-between items-center mb-3">
                                             <div className="flex items-center gap-2">
-                                                <div
-                                                    className="w-2 h-2 rounded-full"
-                                                    style={{ backgroundColor: statusColor, boxShadow: `0 0 8px ${statusColor}88` }}
-                                                />
-                                                <span className="text-[11px] font-black" style={{ color }}>{proc}</span>
+                                                <div className={`p-1.5 rounded-md ${isOnline ? 'bg-slate-800' : 'bg-black/20'}`}>
+                                                    <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: STATUS_COLORS[status] }} />
+                                                </div>
+                                                <span className="text-sm font-bold text-slate-100">{proc} Processor</span>
                                             </div>
-                                            <span
-                                                className="text-[8px] font-bold px-1.5 py-0.5 rounded-sm"
-                                                style={{ backgroundColor: `${statusColor}22`, color: statusColor }}
-                                            >
-                                                {status}
-                                            </span>
+                                            <div className="text-slate-500">
+                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7"></path></svg>
+                                            </div>
                                         </div>
 
-                                        {/* Stats bar */}
                                         {stats && (
-                                            <div className="grid grid-cols-3 gap-1 text-[7px] font-mono opacity-50">
-                                                <div>LAT: {stats.latency.toFixed(0)}ms</div>
-                                                <div>ERR: {(stats.errorRate * 100).toFixed(0)}%</div>
-                                                <div>THR: {stats.throughput.toFixed(0)}%</div>
+                                            <div className="grid grid-cols-3 gap-2 mb-3">
+                                                <div className="bg-slate-900/50 border border-slate-700 rounded p-1.5 text-center">
+                                                    <div className="text-[9px] text-slate-500 uppercase font-bold mb-0.5">Latency</div>
+                                                    <div className="text-xs font-mono font-semibold text-slate-200">{stats.latency.toFixed(0)} ms</div>
+                                                </div>
+                                                <div className="bg-slate-900/50 border border-slate-700 rounded p-1.5 text-center">
+                                                    <div className="text-[9px] text-slate-500 uppercase font-bold mb-0.5">Error Rate</div>
+                                                    <div className={`text-xs font-mono font-semibold ${stats.errorRate > 0 ? 'text-rose-400' : 'text-slate-200'}`}>
+                                                        {(stats.errorRate * 100).toFixed(0)}%
+                                                    </div>
+                                                </div>
+                                                <div className="bg-slate-900/50 border border-slate-700 rounded p-1.5 text-center">
+                                                    <div className="text-[9px] text-slate-500 uppercase font-bold mb-0.5">Usage</div>
+                                                    <div className="text-xs font-mono font-semibold text-slate-200">{stats.throughput.toFixed(0)}%</div>
+                                                </div>
                                             </div>
                                         )}
 
-                                        {/* Throughput bar */}
-                                        {stats && (
-                                            <div className="h-0.5 w-full bg-white/5 rounded-full overflow-hidden">
-                                                <div
-                                                    className="h-full transition-all duration-700"
-                                                    style={{ width: `${stats.throughput}%`, backgroundColor: color }}
-                                                />
-                                            </div>
-                                        )}
-
-                                        {/* Action buttons */}
-                                        <div className="flex gap-1.5 pt-1">
+                                        <div className="flex gap-2">
                                             <button
-                                                id={`btn-fault-${proc.toLowerCase()}`}
-                                                onClick={() => onFaultProcessor(proc)}
-                                                className="flex-1 py-1 text-[8px] font-bold rounded-md bg-[#ff0055]/10 hover:bg-[#ff0055]/20 text-[#ff0055] border border-[#ff0055]/20 transition-all"
-                                            >
-                                                FAULT
-                                            </button>
-                                            <button
-                                                id={`btn-degrade-${proc.toLowerCase()}`}
-                                                onClick={() => onDegradeProcessor(proc)}
-                                                className="flex-1 py-1 text-[8px] font-bold rounded-md bg-[#ffcc00]/10 hover:bg-[#ffcc00]/20 text-[#ffcc00] border border-[#ffcc00]/20 transition-all"
+                                                onClick={(e) => { e.stopPropagation(); onDegradeProcessor(proc); }}
+                                                className="flex-1 py-1.5 text-[10px] font-bold rounded bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 border border-amber-500/30 transition-colors"
                                             >
                                                 DEGRADE
                                             </button>
                                             <button
-                                                id={`btn-recover-${proc.toLowerCase()}`}
-                                                onClick={() => onRecoverProcessor(proc)}
-                                                className="flex-1 py-1 text-[8px] font-bold rounded-md bg-[#00ffaa]/10 hover:bg-[#00ffaa]/20 text-[#00ffaa] border border-[#00ffaa]/20 transition-all"
+                                                onClick={(e) => { e.stopPropagation(); onFaultProcessor(proc); }}
+                                                className="flex-1 py-1.5 text-[10px] font-bold rounded bg-rose-500/20 text-rose-400 hover:bg-rose-500/30 border border-rose-500/30 transition-colors"
+                                            >
+                                                KILL
+                                            </button>
+                                            <button
+                                                onClick={(e) => { e.stopPropagation(); onRecoverProcessor(proc); }}
+                                                className={`flex-1 py-1.5 text-[10px] font-bold rounded transition-colors ${
+                                                    isOnline 
+                                                    ? 'bg-slate-800 text-slate-600 border border-slate-700 cursor-not-allowed' 
+                                                    : 'bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 border border-emerald-500/30'
+                                                }`}
+                                                disabled={isOnline}
                                             >
                                                 RECOVER
                                             </button>
@@ -286,31 +294,44 @@ const Dashboard: React.FC<DashboardProps> = ({
 
                     {/* ── MISSION TAB ── */}
                     {activeTab === 'MISSION' && (
-                        <div className="space-y-3">
+                        <div className="space-y-4">
+                            <button
+                                onClick={onMissionStart}
+                                className="w-full bg-blue-600 text-white font-semibold text-xs py-2.5 rounded-lg hover:bg-blue-500 transition-colors shadow"
+                            >
+                                Transmit Mission Data
+                            </button>
+                            
+                            <hr className="border-slate-700" />
+                            
                             {state.missions.map(mission => (
-                                <div key={mission.id} className="glass p-3 rounded-xl border border-white/5 bg-white/[0.01] flex flex-col gap-2">
-                                    <div className="flex justify-between items-center">
-                                        <span className="text-[10px] font-bold tracking-tight">MISSION_{mission.id}</span>
-                                        <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded-sm ${mission.status === 'active'
-                                            ? 'bg-[#00f2ff]/20 text-[#00f2ff]'
-                                            : 'bg-white/5 opacity-30'
-                                            }`}>
-                                            {mission.status.toUpperCase()}
+                                <div key={mission.id} className="p-3.5 rounded-xl border border-slate-700 bg-slate-700/20 shadow-sm flex flex-col gap-3">
+                                    <div className="flex justify-between items-center border-b border-slate-700 pb-2">
+                                        <span className="text-sm font-bold text-slate-200">Mission ID: {mission.id}</span>
+                                        <span className={`text-[10px] font-bold px-2 py-1 rounded uppercase ${
+                                            mission.status === 'active' ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30' : 'bg-slate-800 text-slate-400 border border-slate-700'
+                                        }`}>
+                                            {mission.status}
                                         </span>
                                     </div>
-                                    <div className="flex flex-wrap gap-1">
-                                        {mission.waypoints.map((wp, i) => (
-                                            <div
-                                                key={i}
-                                                className={`w-5 h-5 rounded-sm flex items-center justify-center text-[7px] font-bold ${wp.reached ? 'bg-[#00ffaa] text-black' : 'bg-white/5 opacity-50'
-                                                    }`}
-                                            >
-                                                {i + 1}
-                                            </div>
-                                        ))}
-                                    </div>
-                                    <div className="text-[7px] opacity-30 font-mono">
-                                        {mission.waypoints.filter(w => w.reached).length}/{mission.waypoints.length} WAYPOINTS REACHED
+                                    
+                                    <div className="space-y-2">
+                                        <div className="text-[10px] font-bold text-slate-400 uppercase">Waypoints</div>
+                                        <div className="flex flex-col gap-1.5">
+                                            {mission.waypoints.map((wp, i) => (
+                                                <div key={i} className="flex justify-between items-center bg-slate-800 p-1.5 rounded border border-slate-700">
+                                                    <div className="flex items-center gap-2">
+                                                        <div className={`w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold ${
+                                                            wp.reached ? 'bg-emerald-500 text-white' : 'bg-slate-700 text-slate-400'
+                                                        }`}>
+                                                            {i + 1}
+                                                        </div>
+                                                        <span className="text-[11px] font-mono text-slate-300">[{wp.pos.x}, {wp.pos.y}]</span>
+                                                    </div>
+                                                    {wp.reached && <span className="text-[10px] font-bold text-emerald-400">REACHED</span>}
+                                                </div>
+                                            ))}
+                                        </div>
                                     </div>
                                 </div>
                             ))}

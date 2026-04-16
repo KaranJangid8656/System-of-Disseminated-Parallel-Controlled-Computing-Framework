@@ -10,9 +10,9 @@ export class ControlProcessor {
     private health: ProcessorHealth;
 
     // Energy constants (units per frame)
-    private readonly ENERGY_COST_MOVE = 0.04;      // per unit of speed
-    private readonly ENERGY_COST_HOVER = 0.008;    // idle but airborne
-    private readonly ENERGY_COST_DEGRADED = 0.02;  // extra overhead when nav is down
+    private readonly ENERGY_COST_MOVE = 0.01;      // per unit of speed (reduced from 0.04)
+    private readonly ENERGY_COST_HOVER = 0.002;    // idle but airborne (reduced from 0.008)
+    private readonly ENERGY_COST_DEGRADED = 0.005; // extra overhead when nav is down
 
     constructor() {
         this.health = {

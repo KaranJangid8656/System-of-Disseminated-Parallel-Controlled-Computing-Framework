@@ -22,8 +22,9 @@ export class AgentCore {
     private control: ControlProcessor;
     private comm: CommProcessor;
 
-    // Cached obstacle list injected by the kernel each tick
+    // Cached obstacle and mission list injected by the kernel each tick
     private obstacles: Array<{ id: string; pos: Vector2D; radius: number }> = [];
+    private missionWaypoints: Vector2D[] = [];
 
     constructor(id: EntityId, initialPos: Vector2D) {
         this.sensor = new SensorProcessor();
@@ -68,6 +69,19 @@ export class AgentCore {
                 // NAV PROCESSOR uses sensor output to compute steering
                 const detected = (this.state as any).detectedObstacleIds as string[] ?? [];
                 const detectedObstacles = this.obstacles.filter(o => detected.includes(o.id));
+
+                // Mission logic: Auto-advance to next waypoint if current target reached
+                if (this.missionWaypoints.length > 0) {
+                    const distToTarget = Math.sqrt(
+                        (this.state.target.x - this.state.pos.x) ** 2 +
+                        (this.state.target.y - this.state.pos.y) ** 2
+                    );
+
+                    if (distToTarget < 15) { // Reach radius
+                        this.state.currentMissionIndex = (this.state.currentMissionIndex + 1) % this.missionWaypoints.length;
+                        this.state.target = { ...this.missionWaypoints[this.state.currentMissionIndex] };
+                    }
+                }
 
                 const cmdVelocity = this.nav.compute(
                     this.state.pos,
@@ -185,6 +199,14 @@ export class AgentCore {
 
     public setObstacles(obstacles: Array<{ id: string; pos: Vector2D; radius: number }>) {
         this.obstacles = obstacles;
+    }
+
+    public setMission(waypoints: Vector2D[]) {
+        this.missionWaypoints = waypoints;
+        if (waypoints.length > 0) {
+            this.state.target = { ...waypoints[0] };
+            this.state.currentMissionIndex = 0;
+        }
     }
 
     public getDetectedObstacles(): string[] {

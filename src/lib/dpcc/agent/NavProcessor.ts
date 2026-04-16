@@ -12,7 +12,7 @@ interface SensorData {
 export class NavProcessor {
     readonly id = 'NAV' as const;
     private health: ProcessorHealth;
-    private readonly MAX_SPEED = 3.5;
+    private readonly MAX_SPEED = 1.0;
     private readonly SAFE_MARGIN = 40; // pixels clearance from obstacle edge
 
     constructor() {
@@ -40,11 +40,11 @@ export class NavProcessor {
 
         if (dist < 2) return { x: 0, y: 0 };
 
-        // Base attraction toward target
+        // Base attraction toward target (normalised)
         let vx = (dx / dist) * this.MAX_SPEED;
         let vy = (dy / dist) * this.MAX_SPEED;
 
-        // Obstacle repulsion (only when sensor data is available)
+        // Obstacle repulsion — linear falloff (avoids exponential spikes)
         if (this.health.status === 'ONLINE') {
             for (const obs of sensorData.detectedObstacles) {
                 const ex = pos.x - obs.pos.x;
@@ -52,14 +52,15 @@ export class NavProcessor {
                 const eDist = Math.sqrt(ex * ex + ey * ey);
                 const clearance = obs.radius + this.SAFE_MARGIN;
                 if (eDist < clearance && eDist > 0.1) {
-                    const force = (clearance / eDist) ** 2;
-                    vx += (ex / eDist) * force * 2;
-                    vy += (ey / eDist) * force * 2;
+                    // Linear: full force at centre, zero at clearance edge
+                    const force = (1 - eDist / clearance) * 3.0;
+                    vx += (ex / eDist) * force;
+                    vy += (ey / eDist) * force;
                 }
             }
         }
 
-        // Velocity instability damping
+        // Normalise to MAX_SPEED (graceful, no hard clamp)
         const speed = Math.sqrt(vx * vx + vy * vy);
         if (speed > this.MAX_SPEED) {
             vx = (vx / speed) * this.MAX_SPEED;
@@ -72,7 +73,13 @@ export class NavProcessor {
             vy += (Math.random() - 0.5) * 1.5;
         }
 
-        return { x: vx, y: vy };
+        // ── Velocity smoothing: exponential lerp toward desired ──
+        // Prevents jarring instant direction snaps; alpha controls responsiveness
+        const alpha = 0.18; // lower = smoother, higher = snappier
+        return {
+            x: currentVelocity.x + (vx - currentVelocity.x) * alpha,
+            y: currentVelocity.y + (vy - currentVelocity.y) * alpha,
+        };
     }
 
     public injectFault() {

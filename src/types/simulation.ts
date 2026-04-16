@@ -38,7 +38,7 @@ export interface SimulationState {
     target: Vector2D;
     detectedObstacles: string[];
     missions: Mission[];
-    threatLevel: 'green' | 'yellow' | 'orange' | 'red';
+    dangerLevel: 'green' | 'yellow' | 'orange' | 'red';
     systemLoad: number;
     altitude: number;
     formationMode: string;
