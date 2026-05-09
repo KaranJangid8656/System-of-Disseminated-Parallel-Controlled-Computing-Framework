@@ -14,6 +14,8 @@ import { CommProcessor } from './CommProcessor';
  * Rule 1.1: No Global State Access — only local state is read/written here.
  */
 export class AgentCore {
+    private static readonly WP_REACH_RADIUS = 18;
+
     private state: AgentLocalState;
 
     // ── Independent Processors ──
@@ -70,16 +72,19 @@ export class AgentCore {
                 const detected = (this.state as any).detectedObstacleIds as string[] ?? [];
                 const detectedObstacles = this.obstacles.filter(o => detected.includes(o.id));
 
-                // Mission logic: Auto-advance to next waypoint if current target reached
+                // Mission logic: advance to next waypoint in order (no wrap — finish at final WP)
                 if (this.missionWaypoints.length > 0) {
-                    const distToTarget = Math.sqrt(
-                        (this.state.target.x - this.state.pos.x) ** 2 +
-                        (this.state.target.y - this.state.pos.y) ** 2
+                    const distToTarget = Math.hypot(
+                        this.state.target.x - this.state.pos.x,
+                        this.state.target.y - this.state.pos.y
                     );
 
-                    if (distToTarget < 15) { // Reach radius
-                        this.state.currentMissionIndex = (this.state.currentMissionIndex + 1) % this.missionWaypoints.length;
-                        this.state.target = { ...this.missionWaypoints[this.state.currentMissionIndex] };
+                    if (distToTarget < AgentCore.WP_REACH_RADIUS) {
+                        const last = this.missionWaypoints.length - 1;
+                        if (this.state.currentMissionIndex < last) {
+                            this.state.currentMissionIndex++;
+                            this.state.target = { ...this.missionWaypoints[this.state.currentMissionIndex] };
+                        }
                     }
                 }
 
@@ -197,15 +202,20 @@ export class AgentCore {
         this.state.target = { ...pos };
     }
 
+    /** Manual target only — stops auto waypoint sequencing until setMission is called again */
+    public clearMissionWaypoints() {
+        this.missionWaypoints = [];
+    }
+
     public setObstacles(obstacles: Array<{ id: string; pos: Vector2D; radius: number }>) {
         this.obstacles = obstacles;
     }
 
     public setMission(waypoints: Vector2D[]) {
         this.missionWaypoints = waypoints;
+        this.state.currentMissionIndex = 0;
         if (waypoints.length > 0) {
             this.state.target = { ...waypoints[0] };
-            this.state.currentMissionIndex = 0;
         }
     }
 

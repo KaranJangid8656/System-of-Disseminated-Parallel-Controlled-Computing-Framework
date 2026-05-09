@@ -7,6 +7,35 @@ import { CommEngine } from '../lib/dpcc/comm/CommEngine';
 import { SimulationState, LogEntry, TelemetryPoint, ModuleStats } from '../types/simulation';
 import { DPCCEvent, ProcessorId } from '../lib/dpcc/types';
 
+const DEFAULT_MISSION_WAYPOINTS: SimulationState['missions'] = [
+    {
+        id: 'M-1',
+        status: 'active',
+        waypoints: [
+            { pos: { x: 700, y: 150 }, reached: false },
+            { pos: { x: 700, y: 500 }, reached: false },
+            { pos: { x: 100, y: 500 }, reached: false },
+            { pos: { x: 100, y: 100 }, reached: false },
+        ],
+    },
+];
+
+function syncMissionProgressFromAgent(
+    mission: SimulationState['missions'][0],
+    missionIndex: number,
+    pos: { x: number; y: number },
+) {
+    const n = mission.waypoints.length;
+    mission.waypoints.forEach((wp, i) => {
+        wp.reached = i < missionIndex;
+    });
+    if (n > 0 && missionIndex >= n - 1) {
+        const last = mission.waypoints[n - 1];
+        const d = Math.hypot(pos.x - last.pos.x, pos.y - last.pos.y);
+        if (d < 20) last.reached = true;
+    }
+}
+
 /**
  * DPCC Multi-Processor Simulation Engine Hook
  * Orchestrates the decentralized event-driven framework with
@@ -48,18 +77,7 @@ export const useSimulationEngine = () => {
         ],
         target: { x: 700, y: 150 },
         detectedObstacles: [],
-        missions: [
-            {
-                id: 'M-1',
-                status: 'active',
-                waypoints: [
-                    { pos: { x: 700, y: 150 }, reached: false },
-                    { pos: { x: 700, y: 500 }, reached: false },
-                    { pos: { x: 100, y: 500 }, reached: false },
-                    { pos: { x: 100, y: 100 }, reached: false },
-                ],
-            },
-        ],
+        missions: structuredClone(DEFAULT_MISSION_WAYPOINTS),
         dangerLevel: 'green',
         systemLoad: 0,
         altitude: 10,
@@ -71,7 +89,14 @@ export const useSimulationEngine = () => {
         if (!agentsRef.current.has('UAV-704')) {
             const agent = new AgentCore('UAV-704', { x: 400, y: 300 });
             agent.setObstacles(stateRef.current.obstacles);
-            agent.setTarget(stateRef.current.target);
+            const active = stateRef.current.missions.find((m) => m.status === 'active');
+            if (active?.waypoints.length) {
+                const pts = active.waypoints.map((w) => w.pos);
+                agent.setMission(pts);
+                stateRef.current.target = { ...pts[0] };
+            } else {
+                agent.setTarget(stateRef.current.target);
+            }
             agentsRef.current.set('UAV-704', agent);
         }
     }, []);
@@ -146,10 +171,16 @@ export const useSimulationEngine = () => {
                             stateRef.current.drone.velocity = local.velocity;
                             stateRef.current.drone.heading = local.heading;
                             stateRef.current.drone.energy = local.energy;
+                            stateRef.current.target = { ...local.target };
                             stateRef.current.drone.trail = [
                                 ...stateRef.current.drone.trail, { ...local.pos },
                             ].slice(-60);
                             stateRef.current.detectedObstacles = agent.getDetectedObstacles();
+
+                            const activeMission = stateRef.current.missions.find((m) => m.status === 'active');
+                            if (activeMission) {
+                                syncMissionProgressFromAgent(activeMission, local.currentMissionIndex, local.pos);
+                            }
 
                             // Sync live processor stats to UI state
                             const procs = local.processors;
@@ -258,15 +289,21 @@ export const useSimulationEngine = () => {
         setIsRunning(false);
         kernelRef.current.clear();
         agentsRef.current.clear();
+        stateRef.current.missions = structuredClone(DEFAULT_MISSION_WAYPOINTS);
+        stateRef.current.obstacles = [
+            { id: 'obs-1', pos: { x: 200, y: 200 }, radius: 30, type: 'static' },
+            { id: 'obs-2', pos: { x: 600, y: 400 }, radius: 45, type: 'static' },
+        ];
         const agent = new AgentCore('UAV-704', { x: 400, y: 300 });
         agent.setObstacles(stateRef.current.obstacles);
-        agent.setTarget({ x: 700, y: 150 });
+        const pts = stateRef.current.missions[0].waypoints.map((w) => w.pos);
+        agent.setMission(pts);
         agentsRef.current.set('UAV-704', agent);
         stateRef.current.drone.pos = { x: 400, y: 300 };
         stateRef.current.drone.trail = [];
         stateRef.current.drone.energy = 100;
         stateRef.current.detectedObstacles = [];
-        stateRef.current.target = { x: 700, y: 150 };
+        stateRef.current.target = { ...pts[0] };
         setTick(0);
         setLogs([]);
         setTelemetry({ 'UAV-704': [] });
@@ -274,9 +311,14 @@ export const useSimulationEngine = () => {
     }, [addLog]);
 
     const setTarget = useCallback((pos: { x: number; y: number }) => {
+        const a = agentsRef.current.get('UAV-704');
+        a?.clearMissionWaypoints();
+        a?.setTarget(pos);
         stateRef.current.target = pos;
-        agentsRef.current.get('UAV-704')?.setTarget(pos);
-        addLog(`Navigation Vector → [${pos.x.toFixed(0)}, ${pos.y.toFixed(0)}]`);
+        stateRef.current.missions.forEach((m) => {
+            if (m.status === 'active') m.waypoints.forEach((w) => { w.reached = false; });
+        });
+        addLog(`Manual nav (waypoint auto-seq off) → [${pos.x.toFixed(0)}, ${pos.y.toFixed(0)}]`);
     }, [addLog]);
 
     const addObstacle = useCallback((pos: { x: number; y: number }) => {
@@ -313,7 +355,16 @@ export const useSimulationEngine = () => {
     }, [addLog]);
 
     const startMission = useCallback(() => {
-        addLog('Mission Sequence Transmitted to NAV Processor', 'SUCCESS');
+        const active = stateRef.current.missions.find((m) => m.status === 'active');
+        if (active?.waypoints.length) {
+            const pts = active.waypoints.map((w) => w.pos);
+            agentsRef.current.get('UAV-704')?.setMission(pts);
+            stateRef.current.target = { ...pts[0] };
+            active.waypoints.forEach((w) => { w.reached = false; });
+            addLog(`Mission sequence locked — ${pts.length} waypoints to NAV`, 'SUCCESS');
+        } else {
+            addLog('No waypoints in mission — add waypoints first', 'WARNING');
+        }
     }, [addLog]);
 
     return {

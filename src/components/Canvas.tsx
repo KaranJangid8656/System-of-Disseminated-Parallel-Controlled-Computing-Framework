@@ -1,7 +1,10 @@
 'use client';
 
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useReducer } from 'react';
 import { SimulationState, Vector2D } from '../types/simulation';
+
+/** Increment when `generateTerrain` palette changes so cached bitmap is rebuilt. */
+const TERRAIN_BUILD = 3;
 
 interface CanvasProps {
     stateRef: React.MutableRefObject<SimulationState>;
@@ -10,416 +13,551 @@ interface CanvasProps {
     tick: number;
 }
 
-const Canvas: React.FC<CanvasProps> = ({ stateRef, onCanvasClick, tick }) => {
+/** Cached tactical backdrop (logical pixels). */
+function generateTerrain(width: number, height: number) {
+    const offscreen = document.createElement('canvas');
+    offscreen.width = width;
+    offscreen.height = height;
+    const ctx = offscreen.getContext('2d');
+    if (!ctx) return offscreen;
+
+    const cx = width / 2;
+    const cy = height / 2;
+
+    const base = ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.max(width, height) * 0.85);
+    base.addColorStop(0, '#18181b');
+    base.addColorStop(0.45, '#0f0f12');
+    base.addColorStop(1, '#09090b');
+    ctx.fillStyle = base;
+    ctx.fillRect(0, 0, width, height);
+
+    // Major range rings
+    ctx.strokeStyle = 'rgba(63, 63, 70, 0.35)';
+    ctx.lineWidth = 1;
+    for (let r = 100; r < Math.max(width, height); r += 100) {
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.fillStyle = 'rgba(161, 161, 170, 0.4)';
+        ctx.font = '10px "JetBrains Mono", ui-monospace, monospace';
+        ctx.fillText(`${r}m`, cx + r + 5, cy - 6);
+    }
+
+    // Minor rings (50m) — faint
+    ctx.strokeStyle = 'rgba(82, 82, 91, 0.14)';
+    for (let r = 50; r < Math.max(width, height); r += 100) {
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        ctx.stroke();
+    }
+
+    const spacing = 50;
+    ctx.strokeStyle = 'rgba(63, 63, 70, 0.32)';
+    ctx.lineWidth = 0.5;
+    ctx.beginPath();
+    for (let x = 0; x <= width; x += spacing) {
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, height);
+    }
+    for (let y = 0; y <= height; y += spacing) {
+        ctx.moveTo(0, y);
+        ctx.lineTo(width, y);
+    }
+    ctx.stroke();
+
+    // Axis guides
+    ctx.strokeStyle = 'rgba(52, 211, 153, 0.12)';
+    ctx.setLineDash([4, 8]);
+    ctx.beginPath();
+    ctx.moveTo(cx, 0);
+    ctx.lineTo(cx, height);
+    ctx.moveTo(0, cy);
+    ctx.lineTo(width, cy);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Waypoint-scale nodes on major grid
+    ctx.fillStyle = 'rgba(52, 211, 153, 0.1)';
+    for (let x = 0; x <= width; x += spacing * 2) {
+        for (let y = 0; y <= height; y += spacing * 2) {
+            ctx.beginPath();
+            ctx.arc(x, y, 1.2, 0, Math.PI * 2);
+            ctx.fill();
+        }
+    }
+
+    // Fine scan-line texture
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.012)';
+    for (let y = 0; y < height; y += 3) {
+        ctx.fillRect(0, y, width, 1);
+    }
+
+    const vGrad = ctx.createRadialGradient(cx, cy, Math.min(width, height) * 0.12, cx, cy, Math.max(width, height) * 0.72);
+    vGrad.addColorStop(0, 'rgba(9, 9, 11, 0)');
+    vGrad.addColorStop(1, 'rgba(9, 9, 11, 0.9)');
+    ctx.fillStyle = vGrad;
+    ctx.fillRect(0, 0, width, height);
+
+    return offscreen;
+}
+
+function drawHudOverlay(
+    ctx: CanvasRenderingContext2D,
+    w: number,
+    h: number,
+    tick: number,
+    sensorRange: number,
+    energy: number,
+) {
+    const pad = 14;
+    const arm = 22;
+    const gold = 'rgba(52, 211, 153, 0.55)';
+    const dim = 'rgba(113, 113, 122, 0.45)';
+
+    ctx.save();
+    ctx.strokeStyle = gold;
+    ctx.lineWidth = 1;
+    const corners: [number, number, number, number][] = [
+        [pad, pad, 1, 1],
+        [w - pad, pad, -1, 1],
+        [pad, h - pad, 1, -1],
+        [w - pad, h - pad, -1, -1],
+    ];
+    for (const [x0, y0, sx, sy] of corners) {
+        ctx.beginPath();
+        ctx.moveTo(x0, y0 + sy * arm);
+        ctx.lineTo(x0, y0);
+        ctx.lineTo(x0 + sx * arm, y0);
+        ctx.stroke();
+    }
+
+    ctx.strokeStyle = dim;
+    ctx.setLineDash([3, 6]);
+    ctx.strokeRect(pad + arm * 0.35, pad + arm * 0.35, w - (pad + arm * 0.35) * 2, h - (pad + arm * 0.35) * 2);
+    ctx.setLineDash([]);
+
+    ctx.font = '10px "JetBrains Mono", ui-monospace, monospace';
+    ctx.fillStyle = 'rgba(228, 228, 231, 0.55)';
+    ctx.fillText('TAC-MAP // UAV-704', pad + arm + 6, pad + 12);
+    ctx.fillStyle = 'rgba(161, 161, 170, 0.5)';
+    ctx.fillText(`RNG ${sensorRange}m`, pad + arm + 6, pad + 24);
+    ctx.textAlign = 'right';
+    ctx.fillText(`T+${tick.toString().padStart(5, '0')}`, w - pad - arm - 6, pad + 12);
+    ctx.fillStyle = energy > 25 ? 'rgba(45, 212, 191, 0.65)' : 'rgba(251, 113, 133, 0.75)';
+    ctx.fillText(`BAT ${energy.toFixed(0)}%`, w - pad - arm - 6, pad + 24);
+    ctx.textAlign = 'left';
+
+    ctx.restore();
+}
+
+function drawTargetReticle(ctx: CanvasRenderingContext2D, x: number, y: number, tick: number) {
+    ctx.save();
+    ctx.translate(x, y);
+    const rot = tick * 0.04;
+    ctx.rotate(rot);
+    ctx.strokeStyle = 'rgba(192, 132, 252, 0.85)';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([6, 4]);
+    ctx.beginPath();
+    ctx.arc(0, 0, 14, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.rotate(-rot);
+    ctx.strokeStyle = 'rgba(232, 121, 249, 0.9)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(-10, 0);
+    ctx.lineTo(10, 0);
+    ctx.moveTo(0, -10);
+    ctx.lineTo(0, 10);
+    ctx.stroke();
+    ctx.fillStyle = 'rgba(244, 114, 182, 0.35)';
+    ctx.beginPath();
+    ctx.arc(0, 0, 3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+}
+
+const Canvas: React.FC<CanvasProps> = ({ stateRef, sensorRange, onCanvasClick, tick }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const terrainCanvasRef = useRef<HTMLCanvasElement | null>(null);
     const smoothedAngleRef = useRef<number>(0);
+    const sizeRef = useRef<{ w: number; h: number }>({ w: 0, h: 0 });
+    const terrainBuildApplied = useRef<number>(0);
+    const [, bumpResize] = useReducer((x: number) => x + 1, 0);
 
-    // Tactical Radar Background Generator (cached offscreen)
-    const generateTerrain = (width: number, height: number) => {
-        const offscreen = document.createElement('canvas');
-        offscreen.width = width;
-        offscreen.height = height;
-        const ctx = offscreen.getContext('2d');
-        if (!ctx) return offscreen;
+    useEffect(() => {
+        const wrap = canvasRef.current?.parentElement;
+        if (!wrap) return;
+        const ro = new ResizeObserver(() => bumpResize());
+        ro.observe(wrap);
+        return () => ro.disconnect();
+    }, []);
 
-        // ── Base Finish ──
-        ctx.fillStyle = '#020617'; // Deep Navy Black
-        ctx.fillRect(0, 0, width, height);
-
-        const centerX = width / 2;
-        const centerY = height / 2;
-
-        // ── Radial Guide Rings ──
-        ctx.strokeStyle = 'rgba(56, 189, 248, 0.15)'; // Slate-400 / Cyan mix
-        ctx.lineWidth = 1;
-        for (let r = 100; r < Math.max(width, height); r += 100) {
-            ctx.beginPath();
-            ctx.arc(centerX, centerY, r, 0, Math.PI * 2);
-            ctx.stroke();
-            
-            // Distance marker
-            ctx.fillStyle = 'rgba(56, 189, 248, 0.3)';
-            ctx.font = '9px monospace';
-            ctx.fillText(`${r}M`, centerX + r + 4, centerY - 4);
-        }
-
-        // ── Tactical Grid ──
-        const spacing = 50;
-        ctx.strokeStyle = 'rgba(51, 65, 85, 0.25)';
-        ctx.lineWidth = 0.5;
-        ctx.beginPath();
-        for (let x = 0; x <= width; x += spacing) { ctx.moveTo(x, 0); ctx.lineTo(x, height); }
-        for (let y = 0; y <= height; y += spacing) { ctx.moveTo(0, y); ctx.lineTo(width, y); }
-        ctx.stroke();
-
-        // ── Crosshair / Radial Lines ──
-        ctx.strokeStyle = 'rgba(56, 189, 248, 0.1)';
-        ctx.setLineDash([5, 5]);
-        ctx.beginPath();
-        ctx.moveTo(centerX, 0); ctx.lineTo(centerX, height);
-        ctx.moveTo(0, centerY); ctx.lineTo(width, centerY);
-        ctx.stroke();
-        ctx.setLineDash([]);
-
-        // ── Grid Intersection Points ──
-        ctx.fillStyle = 'rgba(56, 189, 248, 0.4)';
-        for (let x = 0; x <= width; x += spacing * 2) {
-            for (let y = 0; y <= height; y += spacing * 2) {
-                ctx.beginPath();
-                ctx.arc(x, y, 1, 0, Math.PI * 2);
-                ctx.fill();
-            }
-        }
-
-        // ── Vignette Overlay ──
-        const vGrad = ctx.createRadialGradient(centerX, centerY, 100, centerX, centerY, Math.max(width, height) * 0.7);
-        vGrad.addColorStop(0, 'rgba(2, 6, 23, 0)');
-        vGrad.addColorStop(1, 'rgba(2, 6, 23, 0.8)');
-        ctx.fillStyle = vGrad;
-        ctx.fillRect(0, 0, width, height);
-
-        return offscreen;
-    };
-
-
-    // Robust Resize Handling right before drawing frame
     useEffect(() => {
         const canvas = canvasRef.current;
         if (!canvas) return;
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
 
-        // Ensure canvas pixel dimensions match layout dimensions
-        if (canvas.parentElement) {
-            const rect = canvas.parentElement.getBoundingClientRect();
-            const w = Math.floor(rect.width);
-            const h = Math.floor(rect.height);
-            if (canvas.width !== w || canvas.height !== h) {
-                canvas.width = w;
-                canvas.height = h;
-                // Regenerate terrain only on a real resize
-                terrainCanvasRef.current = generateTerrain(w, h);
-            }
+        const parent = canvas.parentElement;
+        if (!parent) return;
+        const rect = parent.getBoundingClientRect();
+        const w = Math.max(1, Math.floor(rect.width));
+        const h = Math.max(1, Math.floor(rect.height));
+        const dpr = Math.min(typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1, 2);
+
+        const sizeChanged = sizeRef.current.w !== w || sizeRef.current.h !== h;
+        const terrainStale = terrainBuildApplied.current !== TERRAIN_BUILD;
+        if (sizeChanged || terrainStale) {
+            sizeRef.current = { w, h };
+            terrainBuildApplied.current = TERRAIN_BUILD;
+            terrainCanvasRef.current = generateTerrain(w, h);
         }
-        
-        // Ensure terrain exists initially
-        if (!terrainCanvasRef.current) {
-            terrainCanvasRef.current = generateTerrain(canvas.width, canvas.height);
-        }
+
+        canvas.width = Math.floor(w * dpr);
+        canvas.height = Math.floor(h * dpr);
+        canvas.style.width = `${w}px`;
+        canvas.style.height = `${h}px`;
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
         const { drone, obstacles, target, detectedObstacles, missions } = stateRef.current;
 
-        // Draw cached realistic terrain background
         if (terrainCanvasRef.current) {
-            ctx.drawImage(terrainCanvasRef.current, 0, 0);
+            ctx.drawImage(terrainCanvasRef.current, 0, 0, w, h);
         } else {
-            ctx.fillStyle = '#0f172a';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = '#18181b';
+            ctx.fillRect(0, 0, w, h);
         }
 
-        // Missions / Waypoints
-        missions.forEach(mission => {
+        // Planned route (active mission) — connect waypoints in order
+        missions.forEach((mission) => {
+            if (mission.status !== 'active' || mission.waypoints.length < 2) return;
+            ctx.save();
+            ctx.strokeStyle = 'rgba(129, 140, 248, 0.45)';
+            ctx.lineWidth = 2;
+            ctx.setLineDash([10, 6]);
+            ctx.beginPath();
+            mission.waypoints.forEach((wp, i) => {
+                if (i === 0) ctx.moveTo(wp.pos.x, wp.pos.y);
+                else ctx.lineTo(wp.pos.x, wp.pos.y);
+            });
+            ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.restore();
+        });
+
+        missions.forEach((mission) => {
             if (mission.status === 'active') {
                 mission.waypoints.forEach((wp, idx) => {
                     const isReached = wp.reached;
-                    const color = isReached ? '#10b981' : '#3b82f6';
+                    const color = isReached ? '#34d399' : '#22d3ee';
 
                     ctx.save();
                     ctx.translate(wp.pos.x, wp.pos.y);
-                    
+
                     ctx.fillStyle = color;
+                    ctx.globalAlpha = isReached ? 0.9 : 1;
                     ctx.beginPath();
-                    ctx.arc(0, 0, 4, 0, Math.PI * 2);
+                    ctx.moveTo(0, -5);
+                    ctx.lineTo(5, 0);
+                    ctx.lineTo(0, 5);
+                    ctx.lineTo(-5, 0);
+                    ctx.closePath();
                     ctx.fill();
 
-                    ctx.lineWidth = 1.5;
+                    ctx.globalAlpha = 0.45;
                     ctx.strokeStyle = color;
-                    ctx.globalAlpha = 0.5;
-                    ctx.beginPath(); ctx.arc(0, 0, 10, 0, Math.PI * 2); ctx.stroke();
+                    ctx.lineWidth = 1.25;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, 11, 0, Math.PI * 2);
+                    ctx.stroke();
 
-                    ctx.fillStyle = '#94a3b8'; // slate-400
                     ctx.globalAlpha = 1;
-                    ctx.font = '10px ui-sans-serif, system-ui';
+                    ctx.fillStyle = '#e4e4e7';
+                    ctx.font = 'bold 10px "JetBrains Mono", ui-monospace, monospace';
                     ctx.fillText(`WP-${idx + 1}`, 14, 4);
                     ctx.restore();
                 });
             }
         });
 
-        // Obstacles
-        obstacles.forEach(obs => {
+        obstacles.forEach((obs) => {
             const isDetected = detectedObstacles.includes(obs.id);
-            const color = isDetected ? '#ef4444' : '#475569'; // red-500 : slate-600
-            
+            const color = isDetected ? '#fb7185' : '#71717a';
+
             ctx.save();
             ctx.translate(obs.pos.x, obs.pos.y);
-            
-            ctx.fillStyle = isDetected ? 'rgba(239, 68, 68, 0.1)' : 'rgba(71, 85, 105, 0.1)';
-            ctx.beginPath(); ctx.arc(0, 0, obs.radius, 0, Math.PI * 2); ctx.fill();
+
+            ctx.fillStyle = isDetected ? 'rgba(251, 113, 133, 0.12)' : 'rgba(82, 82, 91, 0.12)';
+            ctx.beginPath();
+            ctx.arc(0, 0, obs.radius, 0, Math.PI * 2);
+            ctx.fill();
 
             ctx.strokeStyle = color;
-            ctx.lineWidth = 2;
-            ctx.beginPath(); ctx.arc(0, 0, obs.radius, 0, Math.PI * 2); ctx.stroke();
-            
-            ctx.fillStyle = color;
-            ctx.font = '10px sans-serif';
-            ctx.fillText(isDetected ? `Obstacle (${Math.round(obs.radius)}m)` : 'Unknown', -15, obs.radius + 14);
+            ctx.lineWidth = isDetected ? 2 : 1.5;
+            ctx.setLineDash(isDetected ? [] : [4, 4]);
+            ctx.beginPath();
+            ctx.arc(0, 0, obs.radius, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            ctx.fillStyle = isDetected ? '#fecdd3' : '#a1a1aa';
+            ctx.font = '9px ui-sans-serif, system-ui';
+            ctx.textAlign = 'center';
+            ctx.fillText(
+                isDetected ? `OBST ${Math.round(obs.radius)}m` : 'UNKNOWN',
+                0,
+                obs.radius + 14,
+            );
+            ctx.textAlign = 'left';
             ctx.restore();
         });
 
-        // Direct Target Vector
-        ctx.save();
-        ctx.translate(target.x, target.y);
-        ctx.strokeStyle = '#10b981'; // emerald-500
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.moveTo(-8, 0); ctx.lineTo(8, 0);
-        ctx.moveTo(0, -8); ctx.lineTo(0, 8);
-        ctx.stroke();
-        ctx.restore();
+        drawTargetReticle(ctx, target.x, target.y, tick);
 
-        // Drone
         const { pos, trail, velocity } = drone;
-        // Smooth display angle — lerp via shortest angular path to prevent spinning
         const rawAngle = Math.atan2(velocity.y, velocity.x);
         const speed = Math.sqrt(velocity.x ** 2 + velocity.y ** 2);
-        if (speed > 0.05) { // only rotate when actually moving
+        if (speed > 0.05) {
             let delta = rawAngle - smoothedAngleRef.current;
-            // Wrap delta to [-π, π] for shortest path
-            while (delta >  Math.PI) delta -= Math.PI * 2;
+            while (delta > Math.PI) delta -= Math.PI * 2;
             while (delta < -Math.PI) delta += Math.PI * 2;
-            smoothedAngleRef.current += delta * 0.10; // 0.10 = rotation smoothing factor
+            smoothedAngleRef.current += delta * 0.1;
         }
         const angle = smoothedAngleRef.current;
 
-        // Path Prediction Line
-        ctx.strokeStyle = '#334155'; // slate-700
-        ctx.setLineDash([5, 5]);
-        ctx.beginPath(); ctx.moveTo(pos.x, pos.y); ctx.lineTo(target.x, target.y); ctx.stroke();
+        // Sensor footprint
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y, sensorRange, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(34, 211, 238, 0.05)';
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(34, 211, 238, 0.28)';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([7, 5]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.restore();
+
+        // Vector to target
+        ctx.strokeStyle = 'rgba(161, 161, 170, 0.45)';
+        ctx.lineWidth = 1.25;
+        ctx.setLineDash([6, 6]);
+        ctx.beginPath();
+        ctx.moveTo(pos.x, pos.y);
+        ctx.lineTo(target.x, target.y);
+        ctx.stroke();
         ctx.setLineDash([]);
 
-        // Clean Minimal Trail
         if (trail.length > 1) {
-            ctx.beginPath();
-            ctx.moveTo(trail[0].x, trail[0].y);
             for (let i = 1; i < trail.length; i++) {
-                ctx.strokeStyle = `rgba(59, 130, 246, ${(1 - i / trail.length) * 0.5})`; // blue-500
-                ctx.lineWidth = 2;
+                const t = i / trail.length;
+                ctx.beginPath();
+                ctx.moveTo(trail[i - 1].x, trail[i - 1].y);
                 ctx.lineTo(trail[i].x, trail[i].y);
+                ctx.strokeStyle = `rgba(45, 212, 191, ${0.1 + t * 0.38})`;
+                ctx.lineWidth = 1 + t * 2.2;
+                ctx.lineCap = 'round';
+                ctx.stroke();
             }
-            ctx.stroke();
         }
 
-        // --- ULTRA-REALISTIC QUADCOPTER MODEL ---
+        const rotorSpin = tick * 0.65;
+
         ctx.save();
         ctx.translate(pos.x, pos.y);
         ctx.rotate(angle);
-        ctx.scale(1.4, 1.4); 
-        
-        // --- 1. Main Drop Shadow ---
-        ctx.shadowColor = 'rgba(0, 0, 0, 0.7)';
-        ctx.shadowBlur = 12;
-        ctx.shadowOffsetY = 6;
-        ctx.shadowOffsetX = -2;
+        ctx.scale(1.4, 1.4);
 
-        // --- 2. Advanced Drone Arms ---
-        // Thick arms with metallic gradient
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.65)';
+        ctx.shadowBlur = 14;
+        ctx.shadowOffsetY = 5;
+        ctx.shadowOffsetX = -1;
+
         const armGrad1 = ctx.createLinearGradient(-10, -10, 10, 10);
-        armGrad1.addColorStop(0, '#0f172a');
-        armGrad1.addColorStop(0.5, '#475569');
-        armGrad1.addColorStop(1, '#0f172a');
-        
+        armGrad1.addColorStop(0, '#27272a');
+        armGrad1.addColorStop(0.5, '#71717a');
+        armGrad1.addColorStop(1, '#27272a');
+
         const armGrad2 = ctx.createLinearGradient(-10, 10, 10, -10);
-        armGrad2.addColorStop(0, '#0f172a');
-        armGrad2.addColorStop(0.5, '#475569');
-        armGrad2.addColorStop(1, '#0f172a');
+        armGrad2.addColorStop(0, '#27272a');
+        armGrad2.addColorStop(0.5, '#71717a');
+        armGrad2.addColorStop(1, '#27272a');
 
         ctx.lineWidth = 2.5;
         ctx.lineCap = 'round';
-        
-        // Arm 1 (diagonal)
         ctx.strokeStyle = armGrad1;
         ctx.beginPath();
-        ctx.moveTo(-10, -10); ctx.lineTo(10, 10);
+        ctx.moveTo(-10, -10);
+        ctx.lineTo(10, 10);
         ctx.stroke();
-
-        // Arm 2 (diagonal)
         ctx.strokeStyle = armGrad2;
         ctx.beginPath();
-        ctx.moveTo(-10, 10); ctx.lineTo(10, -10);
+        ctx.moveTo(-10, 10);
+        ctx.lineTo(10, -10);
         ctx.stroke();
 
-        // Caution tip stripes on front arms
-        ctx.strokeStyle = '#eab308'; // caution yellow
+        ctx.strokeStyle = '#22d3ee';
         ctx.lineWidth = 1.5;
+        ctx.shadowColor = 'transparent';
         ctx.beginPath();
-        ctx.moveTo(7, 7); ctx.lineTo(9, 9);
-        ctx.moveTo(7, -7); ctx.lineTo(9, -9);
+        ctx.moveTo(7, 7);
+        ctx.lineTo(9, 9);
+        ctx.moveTo(7, -7);
+        ctx.lineTo(9, -9);
         ctx.stroke();
 
-        // Turn off shadow for internal geometry
-        ctx.shadowColor = 'transparent'; 
-
-        // --- 3. Motor Mounts & Realistic Prop Guards (SHRUNK) ---
-        const drawRealisticRotor = (x: number, y: number) => {
-            // Guard structural wire-supports
-            ctx.strokeStyle = '#334155';
+        const drawRealisticRotor = (rx: number, ry: number, dir: number) => {
+            ctx.strokeStyle = '#52525b';
             ctx.lineWidth = 0.5;
             ctx.beginPath();
-            ctx.moveTo(x, y - 6.5); ctx.lineTo(x, y + 6.5);
-            ctx.moveTo(x - 6.5, y); ctx.lineTo(x + 6.5, y);
+            ctx.moveTo(rx, ry - 6.5);
+            ctx.lineTo(rx, ry + 6.5);
+            ctx.moveTo(rx - 6.5, ry);
+            ctx.lineTo(rx + 6.5, ry);
             ctx.stroke();
 
-            // Outer Guard Ring (metallic shading) - Shrunk from 9 to 6.5
-            const ringGrad = ctx.createLinearGradient(x - 6.5, y - 6.5, x + 6.5, y + 6.5);
-            ringGrad.addColorStop(0, '#64748b');
-            ringGrad.addColorStop(1, '#cbd5e1');
+            const ringGrad = ctx.createLinearGradient(rx - 6.5, ry - 6.5, rx + 6.5, ry + 6.5);
+            ringGrad.addColorStop(0, '#71717a');
+            ringGrad.addColorStop(1, '#e4e4e7');
             ctx.strokeStyle = ringGrad;
             ctx.lineWidth = 1.2;
             ctx.beginPath();
-            ctx.arc(x, y, 6.5, 0, Math.PI * 2);
+            ctx.arc(rx, ry, 6.5, 0, Math.PI * 2);
             ctx.stroke();
 
-            // Dynamic Motor Housing
-            const motorGrad = ctx.createRadialGradient(x, y, 0.5, x, y, 3.5);
-            motorGrad.addColorStop(0, '#94a3b8');
-            motorGrad.addColorStop(1, '#0f172a');
+            const motorGrad = ctx.createRadialGradient(rx, ry, 0.5, rx, ry, 3.5);
+            motorGrad.addColorStop(0, '#d4d4d8');
+            motorGrad.addColorStop(1, '#18181b');
             ctx.fillStyle = motorGrad;
             ctx.beginPath();
-            ctx.arc(x, y, 3.5, 0, Math.PI * 2);
+            ctx.arc(rx, ry, 3.5, 0, Math.PI * 2);
             ctx.fill();
 
-            // High-Speed Blades (Translucent sweeping gradient)
             ctx.save();
-            ctx.translate(x, y);
-            
-            ctx.fillStyle = 'rgba(248, 250, 252, 0.5)'; 
+            ctx.translate(rx, ry);
+            ctx.rotate(rotorSpin * dir);
+            ctx.fillStyle = 'rgba(207, 250, 254, 0.5)';
             ctx.beginPath();
-            ctx.arc(0, 0, 5.5, 0, Math.PI / 2.5);
+            ctx.arc(0, 0, 5.5, 0, Math.PI / 2.4);
             ctx.lineTo(0, 0);
             ctx.fill();
-            
-            ctx.fillStyle = 'rgba(248, 250, 252, 0.3)'; 
+            ctx.fillStyle = 'rgba(165, 243, 252, 0.28)';
             ctx.beginPath();
-            ctx.arc(0, 0, 5.5, Math.PI, Math.PI + Math.PI / 2.5);
+            ctx.arc(0, 0, 5.5, Math.PI, Math.PI + Math.PI / 2.4);
             ctx.lineTo(0, 0);
-            ctx.fill();
-            
-            // Metallic Spinner Cap
-            ctx.fillStyle = '#ffffff';
-            ctx.beginPath();
-            ctx.arc(0, 0, 1, 0, Math.PI * 2);
             ctx.fill();
             ctx.restore();
+
+            ctx.fillStyle = '#f4f4f5';
+            ctx.beginPath();
+            ctx.arc(rx, ry, 1, 0, Math.PI * 2);
+            ctx.fill();
         };
 
-        // Render the 4 rotors (shrunk and slightly pulled in)
-        drawRealisticRotor(11, -11);   
-        drawRealisticRotor(11, 11);   
-        drawRealisticRotor(-11, -11); 
-        drawRealisticRotor(-11, 11);   
+        drawRealisticRotor(11, -11, 1);
+        drawRealisticRotor(11, 11, -1);
+        drawRealisticRotor(-11, -11, -1);
+        drawRealisticRotor(-11, 11, 1);
 
-        // --- 4. Main Fuselage (Sleek DJI-style hexagonal polygon) ---
-        ctx.shadowColor = 'rgba(0, 0, 0, 0.6)';
-        ctx.shadowBlur = 6;
-        
-        // Base plating (dark carbon)
-        ctx.fillStyle = '#0f172a'; 
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.55)';
+        ctx.shadowBlur = 8;
+        ctx.fillStyle = '#18181b';
         ctx.beginPath();
-        ctx.moveTo(14, 0);       // Nosedive
-        ctx.lineTo(6, -6);       // Front-left wingtip
-        ctx.lineTo(-8, -5);      // Rear-left wingtip
-        ctx.lineTo(-12, -2);     // Rear engine exhaust left
-        ctx.lineTo(-12, 2);      // Rear engine exhaust right
-        ctx.lineTo(-8, 5);       // Rear-right wingtip
-        ctx.lineTo(6, 6);        // Front-right wingtip
+        ctx.moveTo(14, 0);
+        ctx.lineTo(6, -6);
+        ctx.lineTo(-8, -5);
+        ctx.lineTo(-12, -2);
+        ctx.lineTo(-12, 2);
+        ctx.lineTo(-8, 5);
+        ctx.lineTo(6, 6);
         ctx.closePath();
         ctx.fill();
 
         ctx.shadowColor = 'transparent';
-
-        // Upper shell (metallic bright center spine)
         const shellGrad = ctx.createLinearGradient(-10, 0, 12, 0);
-        shellGrad.addColorStop(0, '#94a3b8');
-        shellGrad.addColorStop(0.5, '#f8fafc');
-        shellGrad.addColorStop(1, '#cbd5e1');
+        shellGrad.addColorStop(0, '#a1a1aa');
+        shellGrad.addColorStop(0.5, '#f4f4f5');
+        shellGrad.addColorStop(1, '#d4d4d8');
         ctx.fillStyle = shellGrad;
-        
-        // Slightly smaller polygon on top for bevel effect
         ctx.beginPath();
-        ctx.moveTo(11, 0);       
-        ctx.lineTo(5, -4);       
-        ctx.lineTo(-7, -3);      
-        ctx.lineTo(-10, 0);     
-        ctx.lineTo(-7, 3);       
-        ctx.lineTo(5, 4);        
+        ctx.moveTo(11, 0);
+        ctx.lineTo(5, -4);
+        ctx.lineTo(-7, -3);
+        ctx.lineTo(-10, 0);
+        ctx.lineTo(-7, 3);
+        ctx.lineTo(5, 4);
         ctx.closePath();
         ctx.fill();
 
-        // High-tech battery / cooling vent array
-        ctx.fillStyle = '#0f172a';
+        ctx.fillStyle = '#18181b';
         ctx.beginPath();
-        ctx.moveTo(-5, -1.5); ctx.lineTo(-1, -1.5); ctx.lineTo(-1, 1.5); ctx.lineTo(-5, 1.5);
+        ctx.moveTo(-5, -1.5);
+        ctx.lineTo(-1, -1.5);
+        ctx.lineTo(-1, 1.5);
+        ctx.lineTo(-5, 1.5);
         ctx.fill();
         ctx.beginPath();
-        ctx.moveTo(-9, -1.5); ctx.lineTo(-6, -1.5); ctx.lineTo(-6, 1.5); ctx.lineTo(-9, 1.5);
+        ctx.moveTo(-9, -1.5);
+        ctx.lineTo(-6, -1.5);
+        ctx.lineTo(-6, 1.5);
+        ctx.lineTo(-9, 1.5);
         ctx.fill();
 
-        // Center logo/branding subtle hex
-        ctx.strokeStyle = '#3b82f6'; // blue logo accent
+        ctx.strokeStyle = '#38bdf8';
         ctx.lineWidth = 1;
         ctx.beginPath();
         ctx.arc(2, 0, 1.5, 0, Math.PI * 2);
         ctx.stroke();
 
-        // --- 5. Front Camera Gimbal Array ---
-        // Gimbal mount base
-        ctx.fillStyle = '#1e293b';
+        ctx.fillStyle = '#3f3f46';
         ctx.fillRect(11, -2, 4, 4);
-        
-        // Dark camera lens housing
-        ctx.fillStyle = '#020617';
+        ctx.fillStyle = '#09090b';
         ctx.beginPath();
         ctx.arc(15, 0, 2, 0, Math.PI * 2);
         ctx.fill();
-        
-        // Lens reflection optical flare
-        ctx.fillStyle = 'rgba(56, 189, 248, 0.8)'; // Cyan reflection
+        ctx.fillStyle = 'rgba(56, 189, 248, 0.85)';
         ctx.beginPath();
-        // ctx.arc(15.5, -0.5, 0.6, 0, Math.PI * 2);
+        ctx.arc(15.3, -0.4, 0.55, 0, Math.PI * 2);
         ctx.fill();
 
-        // --- 6. Glowing LED Navigation Beacons ---
-        const drawLED = (x: number, y: number, color: string, glowStr: string) => {
-            // Intense core
+        const drawLED = (lx: number, ly: number, color: string, glowStr: string) => {
             ctx.fillStyle = color;
             ctx.beginPath();
-            ctx.arc(x, y, 1, 0, Math.PI * 2);
+            ctx.arc(lx, ly, 1, 0, Math.PI * 2);
             ctx.fill();
-            
-            // Halo glow
             ctx.shadowColor = glowStr;
             ctx.shadowBlur = 6;
             ctx.fillStyle = glowStr;
             ctx.beginPath();
-            ctx.arc(x, y, 1.5, 0, Math.PI * 2);
+            ctx.arc(lx, ly, 1.5, 0, Math.PI * 2);
             ctx.fill();
-            
-            ctx.shadowColor = 'transparent'; // reset
+            ctx.shadowColor = 'transparent';
         };
 
-        // Front (Green / Navigation) - Moved to the arm elbows
-        drawLED(5, -6, '#10b981', 'rgba(16, 185, 129, 0.8)');
-        drawLED(5, 6, '#10b981', 'rgba(16, 185, 129, 0.8)');
-
-        // Rear (Red tail lights) - Moved to rear engine exhaust
-        drawLED(-12, -2, '#ef4444', 'rgba(239, 68, 68, 0.8)');
-        drawLED(-12, 2, '#ef4444', 'rgba(239, 68, 68, 0.8)');
+        drawLED(5, -6, '#34d399', 'rgba(52, 211, 153, 0.85)');
+        drawLED(5, 6, '#34d399', 'rgba(52, 211, 153, 0.85)');
+        drawLED(-12, -2, '#f87171', 'rgba(248, 113, 113, 0.85)');
+        drawLED(-12, 2, '#f87171', 'rgba(248, 113, 113, 0.85)');
 
         ctx.restore();
 
-    }, [stateRef, tick]); // Redraw entirely every tick
+        // Velocity heading tick (world space)
+        if (speed > 0.15) {
+            ctx.save();
+            ctx.translate(pos.x, pos.y);
+            ctx.strokeStyle = 'rgba(45, 212, 191, 0.55)';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(0, 0);
+            ctx.lineTo((velocity.x / speed) * 28, (velocity.y / speed) * 28);
+            ctx.stroke();
+            ctx.restore();
+        }
+
+        drawHudOverlay(ctx, w, h, tick, sensorRange, drone.energy);
+    }, [stateRef, tick, sensorRange, bumpResize]);
 
     const handleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
         const rect = canvasRef.current?.getBoundingClientRect();
@@ -437,13 +575,15 @@ const Canvas: React.FC<CanvasProps> = ({ stateRef, onCanvasClick, tick }) => {
     };
 
     return (
-        <canvas
-            ref={canvasRef}
-            className="w-full h-full cursor-crosshair rounded-xl border border-slate-800"
-            onClick={handleClick}
-            onContextMenu={handleContextMenu}
-            style={{ touchAction: 'none', display: 'block' }}
-        />
+        <div className="relative h-full w-full min-h-0 overflow-hidden rounded-xl bg-zinc-950 ring-1 ring-zinc-800/90 shadow-[inset_0_0_80px_rgba(0,0,0,0.4),0_0_0_1px_rgba(39,39,42,0.7)]">
+            <canvas
+                ref={canvasRef}
+                className="block h-full w-full cursor-crosshair"
+                onClick={handleClick}
+                onContextMenu={handleContextMenu}
+                style={{ touchAction: 'none' }}
+            />
+        </div>
     );
 };
 

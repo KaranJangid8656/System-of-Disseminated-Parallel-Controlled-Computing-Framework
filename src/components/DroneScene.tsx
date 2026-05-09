@@ -26,14 +26,23 @@ function prepareDroneScene(root: THREE.Object3D) {
   });
 }
 
+/** GLTF nodes like prop_1_jnt.34 — spin these, not the whole airframe. */
+const PROP_JOINT_RE = /^prop_[1-4]_jnt(\.|$)/;
+
 function DroneModel({ onLoaded }: { onLoaded: () => void }) {
   const { scene } = useGLTF('/models/drone.glb');
   const modelRef = useRef<THREE.Group>(null);
+  const propRefs = useRef<THREE.Object3D[]>([]);
   const hasNotified = useRef(false);
 
   const cloned = useMemo(() => {
     const c = scene.clone(true);
     prepareDroneScene(c);
+    const props: THREE.Object3D[] = [];
+    c.traverse((obj) => {
+      if (PROP_JOINT_RE.test(obj.name)) props.push(obj);
+    });
+    propRefs.current = props;
     return c;
   }, [scene]);
 
@@ -48,10 +57,20 @@ function DroneModel({ onLoaded }: { onLoaded: () => void }) {
     if (modelRef.current) {
       modelRef.current.rotation.y += delta * 0.15;
     }
+    const spin = delta * 18;
+    const props = [...propRefs.current].sort((a, b) => {
+      const na = parseInt(/^prop_(\d+)_jnt/.exec(a.name)?.[1] ?? '0', 10);
+      const nb = parseInt(/^prop_(\d+)_jnt/.exec(b.name)?.[1] ?? '0', 10);
+      return na - nb;
+    });
+    props.forEach((p, i) => {
+      // Motor shaft in this asset aligns with local Y; alternate CW/CCW like a real quad.
+      p.rotateY(spin * (i % 2 === 0 ? 1 : -1));
+    });
   });
 
   return (
-    <group ref={modelRef} position={[0, 0.15, 0]} scale={4.8}>
+    <group ref={modelRef} position={[0, 0.15, 0]} scale={7.2}>
       <primitive object={cloned} />
     </group>
   );
@@ -63,7 +82,7 @@ function CameraRig() {
 
   useFrame((_, delta) => {
     angle.current += delta * 0.12;
-    const radius = 3.35;
+    const radius = 4.25;
     camera.position.x = Math.sin(angle.current) * radius;
     camera.position.z = Math.cos(angle.current) * radius;
     camera.position.y = 1.85 + Math.sin(angle.current * 0.45) * 0.35;
@@ -106,7 +125,7 @@ function LoadingFallback() {
 export default function DroneScene({ onModelLoaded }: { onModelLoaded: () => void }) {
   return (
     <Canvas
-      camera={{ position: [3.4, 1.9, 3.4], fov: 40 }}
+      camera={{ position: [4.2, 2.2, 4.2], fov: 40 }}
       style={{ width: '100%', height: '100%' }}
       gl={{ antialias: true, alpha: true, powerPreference: 'high-performance' }}
       dpr={[1, 2]}

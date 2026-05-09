@@ -15,7 +15,36 @@ const STATUS_COLORS: Record<string, string> = {
     ONLINE: '#10b981',
     DEGRADED: '#f59e0b',
     OFFLINE: '#ef4444',
-    RECOVERING: '#0ea5e9'
+    RECOVERING: '#d97706'
+};
+
+type ProcessorId = 'SENSOR' | 'NAV' | 'CONTROL' | 'COMM';
+
+const PROCESSOR_SHELL: Record<ProcessorId, { ring: string; topBar: string; headerGlow: string; latencyClass: string }> = {
+    SENSOR: {
+        ring: 'border-lime-900/35',
+        topBar: 'bg-lime-500 shadow-[0_0_15px_rgba(132,204,22,0.4)]',
+        headerGlow: 'from-lime-500/12',
+        latencyClass: 'text-lime-400',
+    },
+    NAV: {
+        ring: 'border-violet-900/35',
+        topBar: 'bg-violet-500 shadow-[0_0_15px_rgba(139,92,246,0.4)]',
+        headerGlow: 'from-violet-500/12',
+        latencyClass: 'text-violet-400',
+    },
+    CONTROL: {
+        ring: 'border-emerald-900/35',
+        topBar: 'bg-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.35)]',
+        headerGlow: 'from-emerald-500/12',
+        latencyClass: 'text-emerald-400',
+    },
+    COMM: {
+        ring: 'border-amber-900/35',
+        topBar: 'bg-amber-500 shadow-[0_0_15px_rgba(245,158,11,0.35)]',
+        headerGlow: 'from-amber-500/12',
+        latencyClass: 'text-amber-400',
+    },
 };
 
 /* --- SHARED COMPONENTS --- */
@@ -54,25 +83,25 @@ const SensorLayout = ({ tick, stats, errorRate }: any) => {
                 <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(circle_at_center,_transparent_0%,_#020617_100%)] z-1 pointer-events-none" />
                 <div className="p-4 border-b border-slate-800 flex justify-between items-center z-10 bg-slate-900/50 backdrop-blur-md">
                     <div className="flex items-center gap-2">
-                        <div className="w-2 h-2 bg-sky-500 rounded-full animate-pulse" />
-                        <span className="text-sky-400 font-mono text-[10px] font-bold tracking-[0.2em] uppercase">LIDAR_POINT_CLOUD_VX_PRIMARY</span>
+                        <div className="w-2 h-2 bg-lime-500 rounded-full animate-pulse" />
+                        <span className="text-lime-400 font-mono text-[10px] font-bold tracking-[0.2em] uppercase">LIDAR_POINT_CLOUD_VX_PRIMARY</span>
                     </div>
                     <span className="text-slate-500 font-mono text-[9px]">SAMPLE_RATE: 45.2KHz / FOV: 360°</span>
                 </div>
                 
                 <div className="flex-1 relative flex items-center justify-center p-12">
                     {/* Radar Grid Architecture */}
-                    <div className="w-full aspect-square max-w-[400px] border border-sky-900/40 rounded-full relative flex items-center justify-center">
+                    <div className="w-full aspect-square max-w-[400px] border border-lime-900/40 rounded-full relative flex items-center justify-center">
                         {[0, 45, 90, 135, 180, 225, 270, 315].map(deg => (
-                            <div key={deg} className="absolute w-full h-px bg-sky-900/20" style={{ transform: `rotate(${deg}deg)` }} />
+                            <div key={deg} className="absolute w-full h-px bg-lime-900/20" style={{ transform: `rotate(${deg}deg)` }} />
                         ))}
                         {[0.2, 0.4, 0.6, 0.8].map(scale => (
-                            <div key={scale} className="absolute border border-sky-900/30 rounded-full" style={{ width: `${scale*100}%`, height: `${scale*100}%` }} />
+                            <div key={scale} className="absolute border border-lime-900/30 rounded-full" style={{ width: `${scale*100}%`, height: `${scale*100}%` }} />
                         ))}
                         
                         {/* Dynamic Sweep */}
-                        <div className="absolute inset-0 rounded-full bg-gradient-to-tr from-sky-500/0 via-sky-500/5 to-sky-500/20" style={{ transform: `rotate(${angle}deg)`, transition: 'transform 0.1s linear' }} />
-                        <div className="absolute inset-0 rounded-full border-r border-sky-400/40" style={{ transform: `rotate(${angle}deg)` }} />
+                        <div className="absolute inset-0 rounded-full bg-gradient-to-tr from-lime-500/0 via-lime-500/5 to-lime-500/20" style={{ transform: `rotate(${angle}deg)`, transition: 'transform 0.1s linear' }} />
+                        <div className="absolute inset-0 rounded-full border-r border-lime-400/40" style={{ transform: `rotate(${angle}deg)` }} />
 
                         {/* Point Cloud Particles */}
                         {Array.from({length: 24}).map((_, i) => {
@@ -83,12 +112,12 @@ const SensorLayout = ({ tick, stats, errorRate }: any) => {
                             const y = 50 + Math.sin(a * Math.PI / 180) * (r/2);
                             const active = Math.abs((a % 360) - angle) < 40;
                             return (
-                                <div key={i} className={`absolute w-1.5 h-1.5 rounded-full transition-all duration-300 ${errorRate > 0.4 ? 'bg-rose-500 shadow-[0_0_8px_#ef4444]' : active ? 'bg-sky-400 shadow-[0_0_12px_#38bdf8] scale-125' : 'bg-sky-900/60 scale-75'}`}
+                                <div key={i} className={`absolute w-1.5 h-1.5 rounded-full transition-all duration-300 ${errorRate > 0.4 ? 'bg-rose-500 shadow-[0_0_8px_#ef4444]' : active ? 'bg-lime-400 shadow-[0_0_12px_#84cc16] scale-125' : 'bg-lime-950/80 scale-75'}`}
                                      style={{ left: `${x}%`, top: `${y}%` }} />
                             );
                         })}
-                        <div className="w-6 h-6 bg-slate-950 border-2 border-sky-500 rounded flex items-center justify-center z-10 shadow-[0_0_20px_rgba(56,189,248,0.4)]">
-                            <div className="w-2 h-2 bg-sky-400 rounded-sm animate-pulse" />
+                        <div className="w-6 h-6 bg-slate-950 border-2 border-lime-500 rounded flex items-center justify-center z-10 shadow-[0_0_20px_rgba(132,204,22,0.4)]">
+                            <div className="w-2 h-2 bg-lime-400 rounded-sm animate-pulse" />
                         </div>
                     </div>
                 </div>
@@ -99,16 +128,16 @@ const SensorLayout = ({ tick, stats, errorRate }: any) => {
                 <div className="bg-slate-900 border border-slate-700 p-4 rounded-xl shadow-lg flex-1">
                     <div className="flex items-center justify-between mb-4">
                         <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Gimbal Depth Matrix</span>
-                        <div className="px-2 py-0.5 bg-sky-900/30 border border-sky-700/50 rounded text-sky-400 text-[9px] font-mono">FEED_01-04</div>
+                        <div className="px-2 py-0.5 bg-lime-950/40 border border-lime-800/50 rounded text-lime-400 text-[9px] font-mono">FEED_01-04</div>
                     </div>
                     <div className="grid grid-cols-2 gap-3 h-48">
                         {[1,2,3,4].map(idx => (
                             <div key={idx} className="bg-slate-950 border border-slate-800 rounded relative overflow-hidden">
-                                <div className="absolute top-2 left-2 text-[8px] font-mono text-sky-800 z-10">AXIS_Y_{idx}00</div>
-                                <div className="absolute inset-0 opacity-[0.03]" style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg width='20' height='20' viewBox='0 0 20 20' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1h1v1H1V1z' fill='%2338bdf8' fill-opacity='1'/%3E%3C/svg%3E")` }} />
+                                <div className="absolute top-2 left-2 text-[8px] font-mono text-lime-800 z-10">AXIS_Y_{idx}00</div>
+                                <div className="absolute inset-0 opacity-[0.03]" style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg width='20' height='20' viewBox='0 0 20 20' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1h1v1H1V1z' fill='%2384cc16' fill-opacity='1'/%3E%3C/svg%3E")` }} />
                                 <div className="h-full flex items-end px-1 gap-0.5">
                                     {Array.from({length: 12}).map((_, bar) => (
-                                        <div key={bar} className="bg-sky-500/30 w-full rounded-t-sm transition-all duration-500" 
+                                        <div key={bar} className="bg-lime-500/30 w-full rounded-t-sm transition-all duration-500" 
                                              style={{ height: `${Math.random() * 80 + 10}%`, opacity: errorRate > 0.5 ? 0.2 : 0.8 }} />
                                     ))}
                                 </div>
@@ -123,10 +152,10 @@ const SensorLayout = ({ tick, stats, errorRate }: any) => {
                         <div className="flex flex-col gap-1.5">
                             <div className="flex justify-between text-[10px] font-mono">
                                 <span className="text-slate-400">Ray Interpolation</span>
-                                <span className="text-sky-400">{(98.4 - errorRate*20).toFixed(1)}%</span>
+                                <span className="text-lime-400">{(98.4 - errorRate*20).toFixed(1)}%</span>
                             </div>
                             <div className="h-1.5 w-full bg-slate-800 rounded-full overflow-hidden">
-                                <div className="h-full bg-sky-500 transition-all duration-500" style={{ width: `${98.4 - errorRate*20}%` }} />
+                                <div className="h-full bg-lime-500 transition-all duration-500" style={{ width: `${98.4 - errorRate*20}%` }} />
                             </div>
                         </div>
                         <div className="flex flex-col gap-1.5">
@@ -154,8 +183,8 @@ const NavLayout = ({ tick, stats, errorRate }: any) => {
             <div className="col-span-2 bg-slate-900 border border-slate-700 rounded-2xl flex flex-col relative overflow-hidden shadow-2xl">
                 <div className="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-900/50">
                     <div className="flex items-center gap-2">
-                        <div className="w-2 h-2 bg-indigo-500 rounded-full" />
-                        <span className="text-indigo-400 font-mono text-[10px] font-bold tracking-[0.2em] uppercase">Tactical_Pathfinder_Core</span>
+                        <div className="w-2 h-2 bg-violet-500 rounded-full" />
+                        <span className="text-violet-400 font-mono text-[10px] font-bold tracking-[0.2em] uppercase">Tactical_Pathfinder_Core</span>
                     </div>
                     <div className="flex gap-4">
                         <span className="text-slate-500 font-mono text-[9px]">MODE: AUTONOMOUS_V3</span>
@@ -173,15 +202,15 @@ const NavLayout = ({ tick, stats, errorRate }: any) => {
                         <polyline 
                             points={`0,100 20,80 40,85 60,40 80,45 100,5`} 
                             fill="none" 
-                            stroke={errorRate > 0.3 ? "#ef4444" : "#6366f1"} 
+                            stroke={errorRate > 0.3 ? "#ef4444" : "#8b5cf6"} 
                             strokeWidth="1" 
                             strokeDasharray={errorRate > 0.3 ? "2, 2" : "5, 5"}
                             filter="url(#glow)"
                         />
                         {[[20,80], [40,85], [60,40], [80,45]].map(([x,y], i) => (
                             <g key={i}>
-                                <circle cx={x} cy={y} r="1.5" fill={errorRate > 0.3 ? "#ef4444" : "#818cf8"} />
-                                <circle cx={x} cy={y} r="4" stroke={errorRate > 0.3 ? "#ef4444" : "#818cf8"} strokeWidth="0.5" fill="none" className="animate-ping" style={{ animationDuration: '3s' }} />
+                                <circle cx={x} cy={y} r="1.5" fill={errorRate > 0.3 ? "#ef4444" : "#a78bfa"} />
+                                <circle cx={x} cy={y} r="4" stroke={errorRate > 0.3 ? "#ef4444" : "#a78bfa"} strokeWidth="0.5" fill="none" className="animate-ping" style={{ animationDuration: '3s' }} />
                                 <text x={x+4} y={y} className="text-[4px] fill-slate-500 font-mono">WP_0{i+1}</text>
                             </g>
                         ))}
@@ -193,34 +222,34 @@ const NavLayout = ({ tick, stats, errorRate }: any) => {
             <div className="col-span-1 flex flex-col gap-4">
                 <div className="bg-slate-900 border border-slate-700 p-6 rounded-xl shadow-lg flex flex-col items-center justify-center relative group">
                     <div className="absolute top-3 left-4 text-[9px] font-black text-slate-500 tracking-tighter uppercase">Bearing_Master</div>
-                    <div className="w-40 h-40 rounded-full border border-indigo-900/30 relative flex items-center justify-center bg-slate-950/40 shadow-inner">
-                        <div className="absolute inset-0 rounded-full border-[6px] border-indigo-900/10" />
+                    <div className="w-40 h-40 rounded-full border border-violet-900/30 relative flex items-center justify-center bg-slate-950/40 shadow-inner">
+                        <div className="absolute inset-0 rounded-full border-[6px] border-violet-900/10" />
                         {['N','E','S','W'].map((dir, i) => (
-                            <span key={i} className="absolute text-[10px] font-mono font-bold text-indigo-700" style={{ transform: `rotate(${i*90}deg) translateY(-54px)` }}>{dir}</span>
+                            <span key={i} className="absolute text-[10px] font-mono font-bold text-violet-700" style={{ transform: `rotate(${i*90}deg) translateY(-54px)` }}>{dir}</span>
                         ))}
                         {/* Needle */}
                         <div className="w-1 h-32 absolute transition-transform duration-500 ease-out" style={{ transform: `rotate(${(tick*2.5)%360}deg)` }}>
-                            <div className="w-full h-1/2 bg-gradient-to-t from-indigo-500 to-indigo-400 rounded-full shadow-[0_0_10px_rgba(99,102,241,0.5)]" />
+                            <div className="w-full h-1/2 bg-gradient-to-t from-violet-500 to-violet-400 rounded-full shadow-[0_0_10px_rgba(139,92,246,0.5)]" />
                             <div className="w-full h-1/2 bg-slate-800 rounded-full" />
                         </div>
                     </div>
                 </div>
 
                 <div className="bg-slate-900 border border-slate-700 p-5 rounded-xl shadow-lg flex-1">
-                    <div className="text-[10px] font-bold text-indigo-500/80 uppercase tracking-widest mb-4">Spatial Metrics</div>
+                    <div className="text-[10px] font-bold text-violet-500/80 uppercase tracking-widest mb-4">Spatial Metrics</div>
                     <div className="grid grid-cols-1 gap-4">
                         {[
-                            { label: 'GPS LOCK', val: `${Math.max(0, Math.floor(18 - errorRate*15))} SATS`, color: errorRate > 0.5 ? 'rose' : 'emerald' },
-                            { label: 'AGL ALT', val: '142.8 M', color: 'indigo' },
-                            { label: 'GRD SPEED', val: '18.4 M/S', color: 'indigo' }
+                            { label: 'GPS LOCK', val: `${Math.max(0, Math.floor(18 - errorRate*15))} SATS`, valClass: errorRate > 0.5 ? 'text-rose-400' : 'text-emerald-400', barClass: errorRate > 0.5 ? 'bg-rose-500/50' : 'bg-emerald-500/50' },
+                            { label: 'AGL ALT', val: '142.8 M', valClass: 'text-violet-400', barClass: 'bg-violet-500/50' },
+                            { label: 'GRD SPEED', val: '18.4 M/S', valClass: 'text-violet-400', barClass: 'bg-violet-500/50' },
                         ].map((m, i) => (
                             <div key={i} className="flex flex-col gap-1">
                                 <div className="flex justify-between items-center">
                                     <span className="text-[9px] text-slate-500 font-mono">{m.label}</span>
-                                    <span className={`text-xs font-bold text-${m.color}-400 font-mono`}>{m.val}</span>
+                                    <span className={`text-xs font-bold font-mono ${m.valClass}`}>{m.val}</span>
                                 </div>
                                 <div className="h-1 bg-slate-800 rounded-full">
-                                    <div className={`h-full bg-${m.color}-500/50 rounded-full`} style={{ width: '70%' }} />
+                                    <div className={`h-full rounded-full ${m.barClass}`} style={{ width: '70%' }} />
                                 </div>
                             </div>
                         ))}
@@ -421,28 +450,26 @@ const ProcessorDetailOverlay: React.FC<ProcessorDetailOverlayProps> = ({
     const isOnline = stats.active && stats.errorRate < 0.3;
     const status = !stats.active ? 'OFFLINE' : stats.errorRate > 0.3 ? 'DEGRADED' : 'ONLINE';
     const statusColor = STATUS_COLORS[status] || '#94a3b8';
-
-    const TYPE_COLORS: Record<string, string> = { SENSOR: 'sky', NAV: 'indigo', CONTROL: 'emerald', COMM: 'amber' };
-    const colorKey = TYPE_COLORS[processorId];
+    const shell = PROCESSOR_SHELL[processorId];
 
     return (
-        <div className={`absolute inset-0 z-10 bg-slate-950 flex flex-col pt-0 text-slate-200 border border-${colorKey}-900/30`}>
+        <div className={`absolute inset-0 z-10 bg-stone-950 flex flex-col pt-0 text-stone-200 border ${shell.ring}`}>
             
             {/* Header matches Processor Theme */}
-            <div className={`bg-slate-900 border-b border-slate-800 px-8 py-5 flex items-center justify-between shadow-2xl relative overflow-hidden group`}>
-                <div className={`absolute top-0 left-0 w-full h-[2px] bg-${colorKey}-500 shadow-[0_0_15px_${statusColor}] z-20`} />
-                <div className={`absolute top-0 left-0 w-full h-24 bg-gradient-to-b from-${colorKey}-500/10 to-transparent pointer-events-none`} />
+            <div className={`bg-stone-900 border-b border-stone-800 px-8 py-5 flex items-center justify-between shadow-2xl relative overflow-hidden group`}>
+                <div className={`absolute top-0 left-0 w-full h-[2px] z-20 ${shell.topBar}`} />
+                <div className={`absolute top-0 left-0 w-full h-24 bg-gradient-to-b ${shell.headerGlow} to-transparent pointer-events-none`} />
                 <div className={`absolute top-0 -left-full w-full h-[1px] bg-white/20 animate-[shimmer_3s_infinite]`} style={{ animationDelay: '1s' }} />
                 
                 <div className="flex items-center gap-8 z-10">
-                    <button onClick={onBack} className="flex items-center text-[10px] font-black tracking-[0.2em] text-slate-400 hover:text-white bg-slate-950 border border-slate-800 hover:border-slate-600 px-5 py-2.5 rounded-lg transition-all shadow-lg active:scale-95">
+                    <button onClick={onBack} className="flex items-center text-[10px] font-black tracking-[0.2em] text-stone-400 hover:text-stone-100 bg-stone-950 border border-stone-700 hover:border-stone-500 px-5 py-2.5 rounded-lg transition-all shadow-lg active:scale-95">
                         <svg className="w-3.5 h-3.5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M15 19l-7-7 7-7"></path></svg>
                         TERMINATE_SESSION
                     </button>
                     <div className="flex flex-col">
                         <div className="flex items-center gap-3">
                             <span className={`text-3xl font-black text-white tracking-[0.3em] font-mono`}>{processorId}</span>
-                            <div className="px-2 py-0.5 bg-slate-950 border border-slate-800 rounded text-[9px] font-mono text-slate-500 tracking-widest mt-1">UNIT_0x7FB</div>
+                            <div className="px-2 py-0.5 bg-stone-950 border border-stone-700 rounded text-[9px] font-mono text-stone-500 tracking-widest mt-1">UNIT_0x7FB</div>
                         </div>
                         <div className="flex items-center gap-2 mt-1">
                             <div className="w-2 h-2 rounded-full animate-pulse" style={{ backgroundColor: statusColor, boxShadow: `0 0 10px ${statusColor}` }} />
@@ -454,24 +481,24 @@ const ProcessorDetailOverlay: React.FC<ProcessorDetailOverlayProps> = ({
                 <div className="flex gap-10 items-center z-10">
                     <div className="text-right flex flex-col items-end">
                         <div className="flex items-baseline gap-1">
-                            <div className={`text-${colorKey}-400 font-mono font-black text-4xl tabular-nums tracking-tighter`}>{stats.latency.toFixed(1)}</div>
-                            <span className="text-[10px] font-bold text-slate-600">MS</span>
+                            <div className={`${shell.latencyClass} font-mono font-black text-4xl tabular-nums tracking-tighter`}>{stats.latency.toFixed(1)}</div>
+                            <span className="text-[10px] font-bold text-stone-600">MS</span>
                         </div>
-                        <div className="text-[9px] text-slate-500 uppercase font-black tracking-[0.2em] mt-1">Process_Interval</div>
+                        <div className="text-[9px] text-stone-500 uppercase font-black tracking-[0.2em] mt-1">Process_Interval</div>
                     </div>
-                    <div className="w-px h-12 bg-slate-800" />
+                    <div className="w-px h-12 bg-stone-800" />
                     <div className="text-right flex flex-col items-end">
                         <div className="flex items-baseline gap-1">
-                            <div className="text-white font-mono font-black text-4xl tabular-nums tracking-tighter">{stats.throughput.toFixed(0)}</div>
-                            <span className="text-[10px] font-bold text-slate-600">%</span>
+                            <div className="text-stone-50 font-mono font-black text-4xl tabular-nums tracking-tighter">{stats.throughput.toFixed(0)}</div>
+                            <span className="text-[10px] font-bold text-stone-600">%</span>
                         </div>
-                        <div className="text-[9px] text-slate-500 uppercase font-black tracking-[0.2em] mt-1">Bandwidth_Util</div>
+                        <div className="text-[9px] text-stone-500 uppercase font-black tracking-[0.2em] mt-1">Bandwidth_Util</div>
                     </div>
                 </div>
             </div>
 
 
-            <div className="flex-1 overflow-y-auto p-6 flex justify-center custom-scrollbar bg-[radial-gradient(ellipse_at_bottom_left,_var(--tw-gradient-stops))] from-slate-900 via-slate-950 to-slate-950">
+            <div className="flex-1 overflow-y-auto p-6 flex justify-center custom-scrollbar bg-[radial-gradient(ellipse_at_bottom_left,_var(--tw-gradient-stops))] from-stone-900 via-stone-950 to-stone-950">
                 <div className="w-full max-w-6xl flex flex-col h-full">
                     
                     {/* Render unique physical layout */}
