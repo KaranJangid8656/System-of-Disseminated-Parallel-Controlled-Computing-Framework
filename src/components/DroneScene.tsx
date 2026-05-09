@@ -27,7 +27,7 @@ function prepareDroneScene(root: THREE.Object3D) {
 }
 
 /** GLTF nodes like prop_1_jnt.34 — spin these, not the whole airframe. */
-const PROP_JOINT_RE = /^prop_[1-4]_jnt(\.|$)/;
+const PROP_JOINT_RE = /(prop|rotor|blade|fan).*\d/i;
 
 function DroneModel({ onLoaded }: { onLoaded: () => void }) {
   const { scene } = useGLTF('/models/drone.glb');
@@ -42,6 +42,7 @@ function DroneModel({ onLoaded }: { onLoaded: () => void }) {
     c.traverse((obj) => {
       if (PROP_JOINT_RE.test(obj.name)) props.push(obj);
     });
+    console.log('Found propeller nodes:', props.map(p => p.name));
     propRefs.current = props;
     return c;
   }, [scene]);
@@ -59,8 +60,8 @@ function DroneModel({ onLoaded }: { onLoaded: () => void }) {
     }
     const spin = delta * 18;
     const props = [...propRefs.current].sort((a, b) => {
-      const na = parseInt(/^prop_(\d+)_jnt/.exec(a.name)?.[1] ?? '0', 10);
-      const nb = parseInt(/^prop_(\d+)_jnt/.exec(b.name)?.[1] ?? '0', 10);
+      const na = parseInt(/(\d+)/.exec(a.name)?.[1] ?? '0', 10);
+      const nb = parseInt(/(\d+)/.exec(b.name)?.[1] ?? '0', 10);
       return na - nb;
     });
     props.forEach((p, i) => {
@@ -70,7 +71,7 @@ function DroneModel({ onLoaded }: { onLoaded: () => void }) {
   });
 
   return (
-    <group ref={modelRef} position={[0, 0.15, 0]} scale={7.2}>
+    <group ref={modelRef} position={[0, 0.45, 0]} scale={50}>
       <primitive object={cloned} />
     </group>
   );
@@ -82,7 +83,7 @@ function CameraRig() {
 
   useFrame((_, delta) => {
     angle.current += delta * 0.12;
-    const radius = 4.25;
+    const radius = 2.0;
     camera.position.x = Math.sin(angle.current) * radius;
     camera.position.z = Math.cos(angle.current) * radius;
     camera.position.y = 1.85 + Math.sin(angle.current * 0.45) * 0.35;
