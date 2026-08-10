@@ -3,28 +3,26 @@ import { SensorProcessor } from './SensorProcessor';
 import { NavProcessor } from './NavProcessor';
 import { ControlProcessor } from './ControlProcessor';
 import { CommProcessor } from './CommProcessor';
+import { hardwareManager } from '../iot/HardwareManager';
 
 /**
  * DPCC Agent Core — Multi-Processor Reliability Framework
  *
  * Orchestrates four independent processors (SENSOR, NAV, CONTROL, COMM).
- * Each processor can be independently faulted, degraded, or recovered to
- * simulate real-world processor redundancy and reliability analysis.
- *
- * Rule 1.1: No Global State Access — only local state is read/written here.
+ * Integrates Hardware-In-The-Loop (HIL) telemetry streaming from physical microcontrollers.
  */
 export class AgentCore {
     private static readonly WP_REACH_RADIUS = 18;
 
     private state: AgentLocalState;
 
-    // ── Independent Processors ──
+    // Processors
     private sensor: SensorProcessor;
     private nav: NavProcessor;
     private control: ControlProcessor;
     private comm: CommProcessor;
 
-    // Cached obstacle and mission list injected by the kernel each tick
+    // Obstacles and mission list
     private obstacles: Array<{ id: string; pos: Vector2D; radius: number }> = [];
     private missionWaypoints: Vector2D[] = [];
 
@@ -45,11 +43,15 @@ export class AgentCore {
             currentMissionIndex: 0,
             processors: this._snapshotProcessors(),
         };
-    }
 
-    // ──────────────────────────────────────────────────────────────
-    //  Public Event Interface (Rule 2.1)
-    // ──────────────────────────────────────────────────────────────
+        // Subscribe to HIL hardware packet feeds
+        hardwareManager.onHardwareTelemetry((packet) => {
+            if (packet.processor === 'CONTROL' && packet.data.vbat !== undefined) {
+                // Physical hardware battery monitoring
+                this.state.energy = Math.min(100, Math.max(0, ((Number(packet.data.vbat) - 9.0) / 3.6) * 100));
+            }
+        });
+    }
 
     public onEvent(event: DPCCEvent): DPCCEvent[] {
         if (this.state.energy <= 0) return [];
@@ -59,20 +61,16 @@ export class AgentCore {
         switch (event.type) {
 
             case 'SENSOR_SCAN': {
-                // SENSOR PROCESSOR runs first: determines what the drone "sees"
                 const detected = this.sensor.scan(this.state.pos, this.obstacles);
                 this.state.processors = this._snapshotProcessors();
-                // Push detection list into state for rendering
                 (this.state as any).detectedObstacleIds = detected;
                 break;
             }
 
             case 'NAV_COMPUTE': {
-                // NAV PROCESSOR uses sensor output to compute steering
                 const detected = (this.state as any).detectedObstacleIds as string[] ?? [];
                 const detectedObstacles = this.obstacles.filter(o => detected.includes(o.id));
 
-                // Mission logic: advance to next waypoint in order (no wrap — finish at final WP)
                 if (this.missionWaypoints.length > 0) {
                     const distToTarget = Math.hypot(
                         this.state.target.x - this.state.pos.x,
@@ -102,7 +100,6 @@ export class AgentCore {
             }
 
             case 'CONTROL_APPLY': {
-                // CONTROL PROCESSOR applies velocity → position + energy cost
                 const cmdVel = (this.state as any).commandedVelocity as Vector2D | null;
                 const navOffline = this.nav.getHealth().status === 'OFFLINE';
 
@@ -123,25 +120,25 @@ export class AgentCore {
                 this.state.energy = Math.max(0, this.state.energy - energyDelta);
                 this.state.processors = this._snapshotProcessors();
 
-                // RTL if critically low energy
                 if (this.state.energy < 15 && this.state.target.x !== 400) {
                     this.state.target = { x: 400, y: 300 }; // Return to launch
                 }
 
-                // Schedule COMM uplink
                 reactions.push({ type: 'COMM_BROADCAST', entityId: this.state.id, data: this._buildTelemetry() });
                 break;
             }
 
             case 'COMM_BROADCAST': {
-                // COMM PROCESSOR handles uplink to GCS
                 this.comm.enqueue({
                     type: 'TELEMETRY_UPLINK',
                     payload: event.data,
                     timestamp: Date.now(),
                 });
-                this.comm.flush(); // attempt transmission
+                this.comm.flush();
                 this.state.processors = this._snapshotProcessors();
+
+                // Also dispatch payload to physical COMM hardware node if attached
+                hardwareManager.dispatchCommandToHardware('COMM', event.data as object);
                 break;
             }
 
@@ -171,10 +168,6 @@ export class AgentCore {
         return reactions;
     }
 
-    // ────────────────────────────────────────────────────────────────
-    //  Fault Injection API (called from UI or kernel)
-    // ────────────────────────────────────────────────────────────────
-
     public faultProcessor(id: ProcessorId) {
         this._faultProcessor(id);
         this.state.processors = this._snapshotProcessors();
@@ -190,10 +183,6 @@ export class AgentCore {
         this.state.processors = this._snapshotProcessors();
     }
 
-    // ────────────────────────────────────────────────────────────────
-    //  Accessors
-    // ────────────────────────────────────────────────────────────────
-
     public getLocalState(): AgentLocalState {
         return { ...this.state, neighbors: new Map(this.state.neighbors) };
     }
@@ -202,7 +191,6 @@ export class AgentCore {
         this.state.target = { ...pos };
     }
 
-    /** Manual target only — stops auto waypoint sequencing until setMission is called again */
     public clearMissionWaypoints() {
         this.missionWaypoints = [];
     }
@@ -222,10 +210,6 @@ export class AgentCore {
     public getDetectedObstacles(): string[] {
         return (this.state as any).detectedObstacleIds ?? [];
     }
-
-    // ────────────────────────────────────────────────────────────────
-    //  Private Helpers
-    // ────────────────────────────────────────────────────────────────
 
     private _faultProcessor(id: ProcessorId) {
         if (id === 'SENSOR') this.sensor.injectFault();

@@ -2,17 +2,30 @@ import { Vector2D, ProcessorHealth } from '../types';
 
 /**
  * CONTROL PROCESSOR
- * Responsibility: Apply velocity to position & enforce energy depletion physics.
- * If OFFLINE, drone cannot move (motors dead).
+ * Responsibility: Closed-loop PID control algorithm for velocity, position actuation & motor PWM signals.
+ * If OFFLINE, drone cannot move (actuators cut off).
  */
 export class ControlProcessor {
     readonly id = 'CONTROL' as const;
     private health: ProcessorHealth;
 
-    // Energy constants (units per frame)
-    private readonly ENERGY_COST_MOVE = 0.01;      // per unit of speed (reduced from 0.04)
-    private readonly ENERGY_COST_HOVER = 0.002;    // idle but airborne (reduced from 0.008)
-    private readonly ENERGY_COST_DEGRADED = 0.005; // extra overhead when nav is down
+    // PID Parameters
+    private kp: number = 0.45;
+    private ki: number = 0.02;
+    private kd: number = 0.15;
+
+    private errorSumX: number = 0;
+    private errorSumY: number = 0;
+    private lastErrorX: number = 0;
+    private lastErrorY: number = 0;
+
+    // PWM Signals (0 - 255)
+    private motorPwm: number = 0;
+
+    // Energy constants
+    private readonly ENERGY_COST_MOVE = 0.008;
+    private readonly ENERGY_COST_HOVER = 0.002;
+    private readonly ENERGY_COST_DEGRADED = 0.005;
 
     constructor() {
         this.health = {
@@ -22,9 +35,37 @@ export class ControlProcessor {
     }
 
     /**
+     * Compute PID position/velocity actuation signal.
+     */
+    public computePID(targetPos: Vector2D, currentPos: Vector2D, dt: number = 0.1): Vector2D {
+        if (this.health.status === 'OFFLINE') return { x: 0, y: 0 };
+
+        const errorX = targetPos.x - currentPos.x;
+        const errorY = targetPos.y - currentPos.y;
+
+        // Accumulate integral with anti-windup clamping
+        this.errorSumX = Math.max(-100, Math.min(100, this.errorSumX + errorX * dt));
+        this.errorSumY = Math.max(-100, Math.min(100, this.errorSumY + errorY * dt));
+
+        // Derivative term
+        const dErrorX = (errorX - this.lastErrorX) / dt;
+        const dErrorY = (errorY - this.lastErrorY) / dt;
+
+        this.lastErrorX = errorX;
+        this.lastErrorY = errorY;
+
+        // PID output calculation
+        const outputX = (this.kp * errorX) + (this.ki * this.errorSumX) + (this.kd * dErrorX);
+        const outputY = (this.kp * errorY) + (this.ki * this.errorSumY) + (this.kd * dErrorY);
+
+        const magnitude = Math.sqrt(outputX * outputX + outputY * outputY);
+        this.motorPwm = Math.min(255, Math.round(magnitude * 25));
+
+        return { x: outputX, y: outputY };
+    }
+
+    /**
      * Apply velocity command to current position.
-     * Returns { newPos, newVelocity, energyDelta }.
-     * If OFFLINE, returns current pos with zero velocity (drone frozen).
      */
     public apply(
         pos: Vector2D,
@@ -36,11 +77,9 @@ export class ControlProcessor {
         this._tickHealth();
 
         if (this.health.status === 'OFFLINE' || currentEnergy <= 0) {
-            // Motors dead – no movement, still consume tiny residual
             return { newPos: { ...pos }, newVelocity: { x: 0, y: 0 }, energyDelta: 0 };
         }
 
-        // Use commanded velocity if available, else hover (zero)
         const vel = commandedVelocity ?? { x: 0, y: 0 };
 
         const newPos: Vector2D = {
@@ -50,17 +89,18 @@ export class ControlProcessor {
 
         const speed = Math.sqrt(vel.x * vel.x + vel.y * vel.y);
         let energyDelta = this.ENERGY_COST_HOVER + speed * this.ENERGY_COST_MOVE;
-        if (navIsOffline) energyDelta += this.ENERGY_COST_DEGRADED; // extra overhead from fallback mode
+        if (navIsOffline) energyDelta += this.ENERGY_COST_DEGRADED;
 
         if (this.health.status === 'DEGRADED') {
-            // Shaky actuators — random jitter
             newPos.x += (Math.random() - 0.5) * 0.8;
             newPos.y += (Math.random() - 0.5) * 0.8;
-            energyDelta *= 1.4; // thruster inefficiency
+            energyDelta *= 1.4;
         }
 
         return { newPos, newVelocity: vel, energyDelta };
     }
+
+    public getMotorPwm(): number { return this.motorPwm; }
 
     public injectFault() {
         this.health.status = 'OFFLINE';

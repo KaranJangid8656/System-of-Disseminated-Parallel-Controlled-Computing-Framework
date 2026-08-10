@@ -29,8 +29,11 @@ function prepareDroneScene(root: THREE.Object3D) {
 /** GLTF nodes like prop_1_jnt.34 — spin these, not the whole airframe. */
 const PROP_JOINT_RE = /(prop|rotor|blade|fan).*\d/i;
 
+// Pre-set DRACO decoder path to ensure compressed models load across all environments.
+useGLTF.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.5/');
+
 function DroneModel({ onLoaded }: { onLoaded: () => void }) {
-  const { scene } = useGLTF('/models/drone.glb');
+  const { scene } = useGLTF('/models/drone.glb', true);
   const modelRef = useRef<THREE.Group>(null);
   const propRefs = useRef<THREE.Object3D[]>([]);
   const hasNotified = useRef(false);
@@ -149,7 +152,6 @@ export default function DroneScene({ onModelLoaded }: { onModelLoaded: () => voi
 
       <Suspense fallback={<LoadingFallback />}>
         <DroneModel onLoaded={onModelLoaded} />
-        <Environment preset="city" environmentIntensity={0.35} />
         <ContactShadows
           position={[0, -1.35, 0]}
           opacity={0.35}
@@ -171,3 +173,5 @@ export default function DroneScene({ onModelLoaded }: { onModelLoaded: () => voi
     </Canvas>
   );
 }
+
+useGLTF.preload('/models/drone.glb');

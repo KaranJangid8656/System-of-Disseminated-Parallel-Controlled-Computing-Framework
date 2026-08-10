@@ -35,6 +35,9 @@ class SimulationPacket(BaseModel):
     agents: List[AgentState]
     timestamp: float
 
+class IMUBufferPacket(BaseModel):
+    samples: List[float] # Time series IMU acceleration / gyro values
+
 # ── Endpoints ────────────────────────────────────────────────────────
 
 @app.get("/")
@@ -139,6 +142,57 @@ async def detect_anomaly(packet: SimulationPacket):
                     })
         return {"anomalies": anomalies, "count": len(anomalies)}
 
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/adaptation/pid_tune")
+async def tune_pid(fault_score: float):
+    """
+    Adaptive PID parameter tuning based on system fault score.
+    Returns optimal Kp, Ki, Kd gains for motor actuators.
+    """
+    try:
+        if fault_score > 1.5:
+            # Conservative PID for degraded hardware
+            kp, ki, kd = 0.25, 0.005, 0.08
+        elif fault_score > 0.5:
+            kp, ki, kd = 0.35, 0.015, 0.12
+        else:
+            # Nominal high-performance tuning
+            kp, ki, kd = 0.45, 0.020, 0.15
+
+        return {"kp": kp, "ki": ki, "kd": kd, "target_regime": "ADAPTIVE_PID"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/anomaly/imu_fft")
+async def analyze_imu_fft(data: IMUBufferPacket):
+    """
+    FFT Spectral analysis on hardware IMU signal buffer.
+    Detects high-frequency motor vibration or sensor noise degradation.
+    """
+    try:
+        if not data.samples or len(data.samples) < 8:
+            return {"dominant_freq": 0.0, "vibration_level": "LOW", "noise_power": 0.0}
+
+        signal = np.array(data.samples)
+        fft_vals = np.abs(np.fft.rfft(signal))
+        noise_power = float(np.mean(fft_vals[1:]))
+
+        if noise_power > 15.0:
+            level = "CRITICAL_VIBRATION"
+        elif noise_power > 5.0:
+            level = "MODERATE_NOISE"
+        else:
+            level = "NOMINAL"
+
+        return {
+            "dominant_freq": float(np.argmax(fft_vals)),
+            "vibration_level": level,
+            "noise_power": round(noise_power, 4)
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
