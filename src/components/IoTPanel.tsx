@@ -11,7 +11,11 @@ interface IoTPanelProps {
 }
 
 export default function IoTPanel({ onOpenFirmwareModal }: IoTPanelProps) {
-  const [serialStatus, setSerialStatus] = useState(serialBridge.getStatus());
+  const [serialStatus, setSerialStatus] = useState({
+    connected: false,
+    baudRate: 115200,
+    supported: false,
+  });
   const [wsStatus, setWsStatus] = useState(wsBridge.getStatus());
   const [wsUrlInput, setWsUrlInput] = useState('ws://192.168.1.100:81');
   const [baudRate, setBaudRate] = useState(115200);
@@ -20,8 +24,13 @@ export default function IoTPanel({ onOpenFirmwareModal }: IoTPanelProps) {
     hardwareManager.getConfigs()
   );
   const [commandInput, setCommandInput] = useState('');
+  const [isMounted, setIsMounted] = useState(false);
 
   useEffect(() => {
+    setIsMounted(true);
+    setSerialStatus(serialBridge.getStatus());
+    setWsStatus(wsBridge.getStatus());
+
     const unsubSerialLog = serialBridge.onLog((msg, level) => {
       addLog(msg, level);
       setSerialStatus(serialBridge.getStatus());
@@ -150,7 +159,7 @@ export default function IoTPanel({ onOpenFirmwareModal }: IoTPanelProps) {
           </div>
 
           <p className="text-[11px] text-zinc-500">
-            {serialStatus.supported
+            {isMounted && serialStatus.supported
               ? 'WebSerial API supported. Plug in your ESP32 or Arduino board and select port.'
               : 'WebSerial API requires Chrome, Edge, or Brave browser over HTTPS/localhost.'}
           </p>
@@ -219,7 +228,7 @@ export default function IoTPanel({ onOpenFirmwareModal }: IoTPanelProps) {
 
                 <div className="text-[10px] text-zinc-500 font-mono flex justify-between mt-1">
                   <span>Packets: {config.packetsReceived}</span>
-                  <span>{config.lastSeen ? `${Math.round((Date.now() - config.lastSeen) / 1000)}s ago` : 'Never'}</span>
+                  <span>{config.lastSeen && isMounted ? `${Math.round((Date.now() - config.lastSeen) / 1000)}s ago` : 'Never'}</span>
                 </div>
               </div>
             );

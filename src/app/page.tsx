@@ -21,7 +21,7 @@ const levelStyle: Record<string, string> = {
 };
 
 export default function Home() {
-  const [activeTab, setActiveTab] = useState<ActiveTab>('SIMULATION');
+  const [activeTab, setActiveTab] = useState<ActiveTab>('IOT_HARDWARE');
   const [showFirmwareModal, setShowFirmwareModal] = useState(false);
   const [selectedProcessor, setSelectedProcessor] = useState<ProcessorId | null>(null);
 
